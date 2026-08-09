@@ -1,0 +1,54 @@
+[project]
+name = "knowledge-forge"
+version = "0.1.0"
+description = "An AI-powered personal knowledge management system."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Amir Mohammad" },
+]
+dependencies = [
+    "pydantic-settings>=2.7,<3",
+    "rich>=13.9,<16",
+    "typer>=0.16,<1",
+]
+
+[project.scripts]
+knowledgeforge = "knowledgeforge.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<10",
+    "ruff>=0.9,<1",
+]
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/knowledgeforge"]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "B",
+    "UP",
+    "SIM",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-config --strict-markers"
