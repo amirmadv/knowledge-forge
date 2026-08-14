@@ -6,7 +6,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
-from knowledgeforge.domain.note.model import Note
+from knowledgeforge.domain.note.model import Note, NoteMetadata
 from knowledgeforge.domain.template import TemplateService
 
 
@@ -27,6 +27,29 @@ class NoteService:
 
     NOTES_DIRECTORY = "notes"
 
+    VALID_NOTE_TYPES = frozenset(
+        {
+            "concept",
+            "research",
+            "project",
+            "reference",
+            "question",
+            "idea",
+            "tutorial",
+            "meeting",
+        }
+    )
+
+    VALID_STATUSES = frozenset(
+        {
+            "draft",
+            "active",
+            "review",
+            "archived",
+            "completed",
+        }
+    )
+
     def __init__(
         self,
         vault_path: Path,
@@ -41,6 +64,20 @@ class NoteService:
         self._vault_path = vault_path
         self._template_service = template_service
 
+
+
+    @staticmethod
+    def _build_tags_yaml(tags: tuple[str, ...]) -> str:
+        """Build YAML list entries for note tags."""
+        if not tags:
+            return "  -"
+
+        return "\n".join(
+            f"  - {tag}"
+            for tag in tags
+        )
+
+
     @property
     def vault_path(self) -> Path:
         """Return the configured vault path."""
@@ -50,12 +87,18 @@ class NoteService:
         self,
         title: str,
         template: str = "default",
+        note_type: str = "concept",
+        status: str = "draft",
+        tags: tuple[str, ...] = (),
     ) -> Note:
         """Create a new Markdown note.
 
         Args:
             title: Human-readable title of the note.
             template: Name of the template used to render the note.
+            note_type: Type of the note.
+            status: Lifecycle status of the note.
+            tags: Tags associated with the note.
 
         Returns:
             The newly created Note.
@@ -63,6 +106,7 @@ class NoteService:
         Raises:
             InvalidNoteTitleError: If the title is empty or invalid.
             NoteAlreadyExistsError: If the note already exists.
+            ValueError: If metadata values are invalid.
         """
         normalized_title = title.strip()
 
@@ -75,6 +119,12 @@ class NoteService:
             raise InvalidNoteTitleError(
                 "Note title must contain usable characters."
             )
+
+        metadata = self._normalize_metadata(
+            note_type=note_type,
+            status=status,
+            tags=tags,
+        )
 
         notes_path = self._vault_path / self.NOTES_DIRECTORY
         notes_path.mkdir(parents=True, exist_ok=True)
@@ -91,16 +141,24 @@ class NoteService:
         if self._template_service is None:
             content = self._build_initial_content(
                 title=normalized_title,
+                metadata=metadata,
                 created_at=now,
+                updated_at=now,
             )
         else:
             template_model = self._template_service.get(template)
             content = self._template_service.render(
                 template_model,
-                {
+                { 
                     "title": normalized_title,
                     "content": "",
-                },
+                    "note_type": metadata.note_type,
+                    "status": metadata.status,
+                    "tags": ", ".join(metadata.tags),
+                    "tags_yaml": self._build_tags_yaml(metadata.tags),
+                    "created_at": now.isoformat(),
+                    "updated_at": now.isoformat(),
+                 },
             )
 
         note_path.write_text(content, encoding="utf-8")
@@ -110,6 +168,7 @@ class NoteService:
             path=note_path,
             created_at=now,
             updated_at=now,
+            metadata=metadata,
         )
 
     def list_notes(self) -> list[Note]:
@@ -123,12 +182,12 @@ class NoteService:
         if not notes_path.is_dir():
             return []
 
-        notes: list[Note] = []
+        notes = [
+            self._read_note_metadata(note_path)
+            for note_path in sorted(notes_path.glob("*.md"))
+        ]
 
-        for note_path in sorted(notes_path.glob("*.md")):
-            notes.append(self._read_note_metadata(note_path))
-
-        return sorted(notes, key=lambda note: note.title.lower())
+        return sorted(notes, key=lambda note: note.title.casefold())
 
     def search(self, query: str) -> list[Note]:
         """Search notes by title and Markdown content.
@@ -191,10 +250,16 @@ class NoteService:
                 "Note title must contain usable characters."
             )
 
-        note_path = self._vault_path / self.NOTES_DIRECTORY / f"{slug}.md"
+        note_path = (
+            self._vault_path
+            / self.NOTES_DIRECTORY
+            / f"{slug}.md"
+        )
 
         if not note_path.exists():
-            raise NoteNotFoundError(f"Note not found: {normalized_title}")
+            raise NoteNotFoundError(
+                f"Note not found: {normalized_title}"
+            )
 
         return self._read_note_metadata(note_path)
 
@@ -211,12 +276,14 @@ class NoteService:
             NoteNotFoundError: If the note does not exist.
         """
         note = self.get(title)
+
         return note.path.read_text(encoding="utf-8")
 
     def update_content(self, title: str, content: str) -> Note:
         """Replace the Markdown content of an existing note.
 
-        The title and creation timestamp in the front matter are preserved.
+        The title, metadata, and creation timestamp in the front matter
+        are preserved. The updated timestamp is refreshed and persisted.
 
         Args:
             title: Human-readable note title.
@@ -241,19 +308,29 @@ class NoteService:
 
         now = datetime.now(UTC)
 
+        updated_front_matter = self._replace_front_matter_value(
+            front_matter,
+            "updated_at",
+            now.isoformat(),
+        )
+
         updated_document = (
-            front_matter
+            updated_front_matter
             + "\n"
             + normalized_content.lstrip("\n")
         )
 
-        note.path.write_text(updated_document, encoding="utf-8")
+        note.path.write_text(
+            updated_document,
+            encoding="utf-8",
+        )
 
         return Note(
             title=note.title,
             path=note.path,
             created_at=note.created_at,
             updated_at=now,
+            metadata=note.metadata,
         )
 
     def update(self, title: str, content: str) -> Note:
@@ -263,30 +340,103 @@ class NoteService:
         """
         return self.update_content(title, content)
 
+    @classmethod
+    def _normalize_metadata(
+        cls,
+        note_type: str,
+        status: str,
+        tags: tuple[str, ...],
+    ) -> NoteMetadata:
+        """Normalize and validate note metadata."""
+        normalized_note_type = note_type.strip().casefold()
+        normalized_status = status.strip().casefold()
+
+        if normalized_note_type not in cls.VALID_NOTE_TYPES:
+            raise ValueError(f"Invalid note type: {note_type}")
+
+        if normalized_status not in cls.VALID_STATUSES:
+            raise ValueError(f"Invalid note status: {status}")
+
+        normalized_tags: list[str] = []
+
+        for tag in tags:
+            normalized_tag = re.sub(
+                r"\s+",
+                "-",
+                tag.strip().casefold(),
+            )
+
+            if (
+                normalized_tag
+                and normalized_tag not in normalized_tags
+            ):
+                normalized_tags.append(normalized_tag)
+
+        return NoteMetadata(
+            note_type=normalized_note_type,
+            status=normalized_status,
+            tags=tuple(normalized_tags),
+        )
+
     @staticmethod
     def _create_slug(title: str) -> str:
         """Convert a note title into a filesystem-friendly slug."""
         slug = title.lower()
-        slug = re.sub(r"[^\w\s-]", "", slug, flags=re.UNICODE)
-        slug = re.sub(r"[-\s]+", "-", slug)
+        slug = re.sub(
+            r"[^\w\s-]",
+            "",
+            slug,
+            flags=re.UNICODE,
+        )
+        slug = re.sub(
+            r"[-\s]+",
+            "-",
+            slug,
+        )
+
         return slug.strip("-_")
 
     @staticmethod
     def _build_initial_content(
         title: str,
+        metadata: NoteMetadata,
         created_at: datetime,
+        updated_at: datetime,
     ) -> str:
         """Build the initial Markdown content for a note."""
-        return (
-            "---\n"
-            f"title: {title}\n"
-            f"created_at: {created_at.isoformat()}\n"
-            "---\n\n"
-            f"# {title}\n\n"
+        lines = [
+            "---",
+            f"title: {title}",
+            f"note_type: {metadata.note_type}",
+            f"status: {metadata.status}",
+            "tags:",
+        ]
+
+        if metadata.tags:
+            lines.extend(
+                f"  - {tag}"
+                for tag in metadata.tags
+            )
+        else:
+            lines.append("  -")
+
+        lines.extend(
+            [
+                f"created_at: {created_at.isoformat()}",
+                f"updated_at: {updated_at.isoformat()}",
+                "---",
+                "",
+                f"# {title}",
+                "",
+            ]
         )
 
+        return "\n".join(lines)
+
     @staticmethod
-    def _split_front_matter(content: str) -> tuple[str, str]:
+    def _split_front_matter(
+        content: str,
+    ) -> tuple[str, str]:
         """Split a Markdown document into front matter and body."""
         if not content.startswith("---\n"):
             return "", content
@@ -304,27 +454,200 @@ class NoteService:
         )
 
     @staticmethod
-    def _read_note_metadata(note_path: Path) -> Note:
-        """Read basic note metadata from a Markdown file."""
-        content = note_path.read_text(encoding="utf-8")
+    def _replace_front_matter_value(
+        front_matter: str,
+        key: str,
+        value: str,
+    ) -> str:
+        """Replace or append a scalar front-matter value."""
+        pattern = re.compile(
+            rf"^{re.escape(key)}:[ \t]*.*$",
+            flags=re.MULTILINE,
+        )
 
-        title = note_path.stem.replace("-", " ").title()
+        replacement = f"{key}: {value}"
+
+        if pattern.search(front_matter):
+            return pattern.sub(
+                replacement,
+                front_matter,
+                count=1,
+            )
+
+        return (
+            front_matter.rstrip("\n")
+            + "\n"
+            + replacement
+        )
+
+    @staticmethod
+    def _parse_front_matter_metadata(
+        front_matter: str,
+    ) -> tuple[
+        str | None,
+        str | None,
+        tuple[str, ...],
+        datetime | None,
+        datetime | None,
+    ]:
+        """Parse note metadata from YAML-like front matter.
+
+        This parser intentionally handles only the small YAML subset
+        generated by KnowledgeForge. It avoids a full YAML dependency
+        while keeping parsing deterministic and safe.
+        """
+        note_type: str | None = None
+        status: str | None = None
+        tags: list[str] = []
+        created_at: datetime | None = None
+        updated_at: datetime | None = None
+
+        lines = front_matter.splitlines()
+        index = 0
+
+        while index < len(lines):
+            line = lines[index].strip()
+
+            if not line or line == "---":
+                index += 1
+                continue
+
+            if line.startswith("note_type:"):
+                note_type = line.split(
+                    ":",
+                    1,
+                )[1].strip()
+
+                index += 1
+                continue
+
+            if line.startswith("status:"):
+                status = line.split(
+                    ":",
+                    1,
+                )[1].strip()
+
+                index += 1
+                continue
+
+            if line.startswith("created_at:"):
+                raw_created_at = line.split(
+                    ":",
+                    1,
+                )[1].strip()
+
+                try:
+                    created_at = datetime.fromisoformat(
+                        raw_created_at
+                    )
+                except ValueError:
+                    created_at = None
+
+                index += 1
+                continue
+
+            if line.startswith("updated_at:"):
+                raw_updated_at = line.split(
+                    ":",
+                    1,
+                )[1].strip()
+
+                try:
+                    updated_at = datetime.fromisoformat(
+                        raw_updated_at
+                    )
+                except ValueError:
+                    updated_at = None
+
+                index += 1
+                continue
+
+            if line == "tags:":
+                index += 1
+
+                while index < len(lines):
+                    tag_line = lines[index]
+
+                    stripped_tag_line = tag_line.strip()
+
+                    if not stripped_tag_line:
+                        index += 1
+                        continue
+
+                    if not tag_line.startswith((" ", "\t")):
+                        break
+
+                    if not stripped_tag_line.startswith("-"):
+                        break
+
+                    tag = stripped_tag_line[1:].strip()
+
+                    if tag:
+                        tags.append(tag)
+
+                    index += 1
+
+                continue
+
+            index += 1
+
+        normalized_tags: list[str] = []
+
+        for tag in tags:
+            normalized_tag = re.sub(
+                r"\s+",
+                "-",
+                tag.casefold().strip(),
+            )
+
+            if (
+                normalized_tag
+                and normalized_tag not in normalized_tags
+            ):
+                normalized_tags.append(normalized_tag)
+
+        return (
+            note_type,
+            status,
+            tuple(normalized_tags),
+            created_at,
+            updated_at,
+        )
+
+    @staticmethod
+    def _read_note_metadata(note_path: Path) -> Note:
+        """Read note metadata from a Markdown file."""
+        content = note_path.read_text(
+            encoding="utf-8",
+        )
+
+        title = (
+            note_path.stem
+            .replace("-", " ")
+            .title()
+        )
+
+        stat = note_path.stat()
 
         created_at = datetime.fromtimestamp(
-            note_path.stat().st_ctime,
+            stat.st_ctime,
             tz=UTC,
         )
 
         updated_at = datetime.fromtimestamp(
-            note_path.stat().st_mtime,
+            stat.st_mtime,
             tz=UTC,
         )
 
+        metadata = NoteMetadata()
+
         if content.startswith("---\n"):
-            front_matter, _ = NoteService._split_front_matter(content)
+            front_matter, _ = NoteService._split_front_matter(
+                content
+            )
 
             title_match = re.search(
-                r"^title:\s*(.+)$",
+                r"^title:[ \t]*(.+)$",
                 front_matter,
                 flags=re.MULTILINE,
             )
@@ -332,9 +655,44 @@ class NoteService:
             if title_match:
                 title = title_match.group(1).strip()
 
+            (
+                note_type,
+                status,
+                tags,
+                parsed_created_at,
+                parsed_updated_at,
+            ) = NoteService._parse_front_matter_metadata(
+                front_matter
+            )
+
+            normalized_note_type = (
+                note_type.strip().casefold()
+                if note_type
+                else "concept"
+            )
+
+            normalized_status = (
+                status.strip().casefold()
+                if status
+                else "draft"
+            )
+
+            metadata = NoteMetadata(
+                note_type=normalized_note_type,
+                status=normalized_status,
+                tags=tags,
+            )
+
+            if parsed_created_at is not None:
+                created_at = parsed_created_at
+
+            if parsed_updated_at is not None:
+                updated_at = parsed_updated_at
+
         return Note(
             title=title,
             path=note_path,
             created_at=created_at,
             updated_at=updated_at,
+            metadata=metadata,
         )

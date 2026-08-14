@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+
+@dataclass(frozen=True, slots=True)
+class NoteMetadata:
+    """Metadata associated with a KnowledgeForge note."""
+
+    note_type: str = "concept"
+    status: str = "draft"
+    tags: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +24,7 @@ class Note:
     path: Path
     created_at: datetime
     updated_at: datetime
+    metadata: NoteMetadata = field(default_factory=NoteMetadata)
 
     @property
     def filename(self) -> str:
@@ -23,5 +33,5 @@ class Note:
 
     @property
     def slug(self) -> str:
-        """Return the filename without its extension."""
+        """Return the note slug derived from its filename."""
         return self.path.stem

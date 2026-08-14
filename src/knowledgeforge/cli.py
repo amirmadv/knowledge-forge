@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import typer
 
 from knowledgeforge.application.commands import (
@@ -63,26 +65,50 @@ def init_command() -> None:
 @note_app.command("create")
 def create_note_command(
     title: str,
-    template: str = typer.Option(
-        "default",
-        "--template",
-        "-t",
-        help="Template name used to create the note.",
-    ),
+    template: Annotated[
+        str,
+        typer.Option(
+            "--template",
+            "-t",
+            help="Template name used to create the note.",
+        ),
+    ] = "default",
+    note_type: Annotated[
+        str,
+        typer.Option(
+            "--type",
+            help="Type of the note.",
+        ),
+    ] = "concept",
+    status: Annotated[
+        str,
+        typer.Option(
+            "--status",
+            help="Lifecycle status of the note.",
+        ),
+    ] = "draft",
+    tags: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--tag",
+            help="Tag assigned to the note. Repeat --tag for multiple tags.",
+        ),
+    ] = None,
 ) -> None:
     """Create a new Markdown note."""
     try:
         result = create_note(
             title=title,
             template=template,
+            note_type=note_type,
+            status=status,
+            tags=tuple(tags or ()),
         )
-    except NoteAlreadyExistsError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    except NoteNotFoundError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    except ValueError as exc:
+    except (
+        NoteAlreadyExistsError,
+        NoteNotFoundError,
+        ValueError,
+    ) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
@@ -104,11 +130,18 @@ def list_notes_command() -> None:
     for index, note in enumerate(notes, start=1):
         typer.echo(f"\n{index}. {note.title}")
         typer.echo(f"   {note.path}")
+        typer.echo(f"   Type: {note.metadata.note_type}")
+        typer.echo(f"   Status: {note.metadata.status}")
+
+        if note.metadata.tags:
+            typer.echo(
+                f"   Tags: {', '.join(note.metadata.tags)}"
+            )
 
 
 @note_app.command("search")
 def search_notes_command(query: str) -> None:
-    """Search notes by title and content."""
+    """Search notes by title, content, and metadata."""
     try:
         notes = search_notes(query)
     except ValueError as exc:
@@ -131,35 +164,49 @@ def show_note_command(title: str) -> None:
     """Show a note and its Markdown content."""
     try:
         note, content = show_note(title)
-    except NoteNotFoundError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    except ValueError as exc:
+    except (
+        NoteNotFoundError,
+        ValueError,
+    ) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
     typer.echo(f"Title: {note.title}")
     typer.echo(f"Path: {note.path}")
+    typer.echo(f"Slug: {note.slug}")
+    typer.echo(f"Type: {note.metadata.note_type}")
+    typer.echo(f"Status: {note.metadata.status}")
+
+    if note.metadata.tags:
+        typer.echo(
+            f"Tags: {', '.join(note.metadata.tags)}"
+        )
+
     typer.echo("\n" + content)
 
 
 @note_app.command("edit")
 def edit_note_command(
     title: str,
-    content: str = typer.Option(
-        ...,
-        "--content",
-        "-c",
-        help="New Markdown content for the note.",
-    ),
+    content: Annotated[
+        str,
+        typer.Option(
+            "--content",
+            "-c",
+            help="New Markdown content for the note.",
+        ),
+    ],
 ) -> None:
     """Replace the content of an existing note."""
     try:
-        result = update_note(title, content)
-    except NoteNotFoundError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    except ValueError as exc:
+        result = update_note(
+            title,
+            content,
+        )
+    except (
+        NoteNotFoundError,
+        ValueError,
+    ) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
@@ -170,12 +217,14 @@ def edit_note_command(
 @template_app.command("create")
 def create_template_command(
     name: str,
-    content: str = typer.Option(
-        ...,
-        "--content",
-        "-c",
-        help="Markdown content of the template.",
-    ),
+    content: Annotated[
+        str,
+        typer.Option(
+            "--content",
+            "-c",
+            help="Markdown content of the template.",
+        ),
+    ],
 ) -> None:
     """Create a new Markdown template."""
     try:
@@ -183,10 +232,10 @@ def create_template_command(
             name=name,
             content=content,
         )
-    except InvalidTemplateNameError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    except FileExistsError as exc:
+    except (
+        InvalidTemplateNameError,
+        FileExistsError,
+    ) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
@@ -214,10 +263,10 @@ def show_template_command(name: str) -> None:
     """Show a template and its Markdown content."""
     try:
         template = show_template(name)
-    except TemplateNotFoundError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    except InvalidTemplateNameError as exc:
+    except (
+        TemplateNotFoundError,
+        InvalidTemplateNameError,
+    ) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 

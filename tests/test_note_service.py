@@ -119,3 +119,167 @@ def test_search_rejects_empty_query(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Search query cannot be empty"):
         service.search("   ")
+
+
+def test_create_stores_note_metadata(
+    tmp_path: Path,
+) -> None:
+    """Creating a note should persist its metadata."""
+    service = NoteService(tmp_path / "vault")
+
+    note = service.create(
+        "Linear Regression",
+        note_type="research",
+        status="active",
+        tags=("machine-learning", "regression"),
+    )
+
+    assert note.metadata.note_type == "research"
+    assert note.metadata.status == "active"
+    assert note.metadata.tags == (
+        "machine-learning",
+        "regression",
+    )
+
+    content = note.path.read_text(encoding="utf-8")
+
+    assert "type: research" in content
+    assert "status: active" in content
+    assert "  - machine-learning" in content
+    assert "  - regression" in content
+    assert "updated_at:" in content
+
+
+def test_create_normalizes_metadata(
+    tmp_path: Path,
+) -> None:
+    """Metadata should be normalized before persistence."""
+    service = NoteService(tmp_path / "vault")
+
+    note = service.create(
+        "Python",
+        note_type=" RESEARCH ",
+        status=" ACTIVE ",
+        tags=(
+            "Machine Learning",
+            "machine-learning",
+            "Python",
+        ),
+    )
+
+    assert note.metadata.note_type == "research"
+    assert note.metadata.status == "active"
+    assert note.metadata.tags == (
+        "machine-learning",
+        "python",
+    )
+
+
+def test_get_reads_metadata_from_front_matter(
+    tmp_path: Path,
+) -> None:
+    """Getting a note should reconstruct its metadata."""
+    service = NoteService(tmp_path / "vault")
+
+    created = service.create(
+        "Linear Regression",
+        note_type="research",
+        status="review",
+        tags=("machine-learning", "regression"),
+    )
+
+    loaded = service.get("Linear Regression")
+
+    assert loaded.title == created.title
+    assert loaded.metadata.note_type == "research"
+    assert loaded.metadata.status == "review"
+    assert loaded.metadata.tags == (
+        "machine-learning",
+        "regression",
+    )
+
+
+def test_search_finds_note_by_metadata(
+    tmp_path: Path,
+) -> None:
+    """Search should find notes through metadata."""
+    service = NoteService(tmp_path / "vault")
+
+    service.create(
+        "Linear Regression",
+        note_type="research",
+        tags=("machine-learning",),
+    )
+
+    service.create("Python Programming")
+
+    results = service.search("machine-learning")
+
+    assert len(results) == 1
+    assert results[0].title == "Linear Regression"
+
+
+def test_update_preserves_metadata(
+    tmp_path: Path,
+) -> None:
+    """Updating note content should preserve metadata."""
+    service = NoteService(tmp_path / "vault")
+
+    service.create(
+        "Linear Regression",
+        note_type="research",
+        status="active",
+        tags=("machine-learning", "regression"),
+    )
+
+    updated = service.update(
+        "Linear Regression",
+        "New content.",
+    )
+
+    assert updated.metadata.note_type == "research"
+    assert updated.metadata.status == "active"
+    assert updated.metadata.tags == (
+        "machine-learning",
+        "regression",
+    )
+
+    content = updated.path.read_text(encoding="utf-8")
+
+    assert "type: research" in content
+    assert "status: active" in content
+    assert "  - machine-learning" in content
+    assert "  - regression" in content
+    assert "New content." in content
+
+
+def test_create_rejects_invalid_note_type(
+    tmp_path: Path,
+) -> None:
+    """An unsupported note type should be rejected."""
+    service = NoteService(tmp_path / "vault")
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid note type",
+    ):
+        service.create(
+            "Python",
+            note_type="invalid",
+        )
+
+
+def test_create_rejects_invalid_status(
+    tmp_path: Path,
+) -> None:
+    """An unsupported status should be rejected."""
+    service = NoteService(tmp_path / "vault")
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid note status",
+    ):
+        service.create(
+            "Python",
+            status="invalid",
+        )
