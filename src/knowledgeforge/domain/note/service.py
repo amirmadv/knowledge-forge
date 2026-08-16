@@ -64,8 +64,6 @@ class NoteService:
         self._vault_path = vault_path
         self._template_service = template_service
 
-
-
     @staticmethod
     def _build_tags_yaml(tags: tuple[str, ...]) -> str:
         """Build YAML list entries for note tags."""
@@ -76,7 +74,6 @@ class NoteService:
             f"  - {tag}"
             for tag in tags
         )
-
 
     @property
     def vault_path(self) -> Path:
@@ -149,7 +146,7 @@ class NoteService:
             template_model = self._template_service.get(template)
             content = self._template_service.render(
                 template_model,
-                { 
+                {
                     "title": normalized_title,
                     "content": "",
                     "note_type": metadata.note_type,
@@ -158,7 +155,7 @@ class NoteService:
                     "tags_yaml": self._build_tags_yaml(metadata.tags),
                     "created_at": now.isoformat(),
                     "updated_at": now.isoformat(),
-                 },
+                },
             )
 
         note_path.write_text(content, encoding="utf-8")
@@ -171,11 +168,21 @@ class NoteService:
             metadata=metadata,
         )
 
-    def list_notes(self) -> list[Note]:
-        """Return all Markdown notes in the vault.
+    def list_notes(
+        self,
+        note_type: str | None = None,
+        status: str | None = None,
+        tag: str | None = None,
+    ) -> list[Note]:
+        """List notes with optional metadata filters.
+
+        Args:
+            note_type: Optional note type filter.
+            status: Optional lifecycle status filter.
+            tag: Optional tag filter.
 
         Returns:
-            Notes sorted alphabetically by title.
+            Notes matching all provided filters.
         """
         notes_path = self._vault_path / self.NOTES_DIRECTORY
 
@@ -187,7 +194,55 @@ class NoteService:
             for note_path in sorted(notes_path.glob("*.md"))
         ]
 
-        return sorted(notes, key=lambda note: note.title.casefold())
+        normalized_note_type = (
+            note_type.strip().casefold()
+            if note_type is not None
+            else None
+        )
+
+        normalized_status = (
+            status.strip().casefold()
+            if status is not None
+            else None
+        )
+
+        normalized_tag = (
+            re.sub(
+                r"\s+",
+                "-",
+                tag.strip().casefold(),
+            )
+            if tag is not None
+            else None
+        )
+
+        filtered_notes = notes
+
+        if normalized_note_type:
+            filtered_notes = [
+                note
+                for note in filtered_notes
+                if note.metadata.note_type == normalized_note_type
+            ]
+
+        if normalized_status:
+            filtered_notes = [
+                note
+                for note in filtered_notes
+                if note.metadata.status == normalized_status
+            ]
+
+        if normalized_tag:
+            filtered_notes = [
+                note
+                for note in filtered_notes
+                if normalized_tag in note.metadata.tags
+            ]
+
+        return sorted(
+            filtered_notes,
+            key=lambda note: note.title.casefold(),
+        )
 
     def search(self, query: str) -> list[Note]:
         """Search notes by title and Markdown content.
@@ -262,6 +317,25 @@ class NoteService:
             )
 
         return self._read_note_metadata(note_path)
+
+    def delete(self, title: str) -> Note:
+        """Delete an existing note from the vault.
+
+        Args:
+            title: Human-readable note title.
+
+        Returns:
+            The deleted Note.
+
+        Raises:
+            NoteNotFoundError: If the note does not exist.
+            InvalidNoteTitleError: If the title cannot produce a valid slug.
+        """
+        note = self.get(title)
+
+        note.path.unlink()
+
+        return note
 
     def read_content(self, title: str) -> str:
         """Read the complete Markdown content of a note.
@@ -382,12 +456,14 @@ class NoteService:
     def _create_slug(title: str) -> str:
         """Convert a note title into a filesystem-friendly slug."""
         slug = title.lower()
+
         slug = re.sub(
             r"[^\w\s-]",
             "",
             slug,
             flags=re.UNICODE,
         )
+
         slug = re.sub(
             r"[-\s]+",
             "-",
@@ -567,7 +643,6 @@ class NoteService:
 
                 while index < len(lines):
                     tag_line = lines[index]
-
                     stripped_tag_line = tag_line.strip()
 
                     if not stripped_tag_line:

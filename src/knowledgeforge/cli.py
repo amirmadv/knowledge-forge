@@ -9,6 +9,7 @@ import typer
 from knowledgeforge.application.commands import (
     create_note,
     create_template,
+    delete_note,
     initialize_knowledgeforge,
     list_notes,
     list_templates,
@@ -117,9 +118,35 @@ def create_note_command(
 
 
 @note_app.command("list")
-def list_notes_command() -> None:
-    """List all Markdown notes."""
-    notes = list_notes()
+def list_notes_command(
+    note_type: Annotated[
+        str | None,
+        typer.Option(
+            "--type",
+            help="Filter notes by note type.",
+        ),
+    ] = None,
+    status: Annotated[
+        str | None,
+        typer.Option(
+            "--status",
+            help="Filter notes by lifecycle status.",
+        ),
+    ] = None,
+    tag: Annotated[
+        str | None,
+        typer.Option(
+            "--tag",
+            help="Filter notes by tag.",
+        ),
+    ] = None,
+) -> None:
+    """List Markdown notes with optional metadata filters."""
+    notes = list_notes(
+        note_type=note_type,
+        status=status,
+        tag=tag,
+    )
 
     typer.echo("KnowledgeForge Notes")
 
@@ -213,6 +240,20 @@ def edit_note_command(
     typer.echo(result.message)
     typer.echo(f"Path: {result.note.path}")
 
+@note_app.command("delete")
+def delete_note_command(title: str) -> None:
+    """Delete an existing Markdown note."""
+    try:
+        result = delete_note(title)
+    except (
+        NoteNotFoundError,
+        ValueError,
+    ) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(result.message)
+    typer.echo(f"Path: {result.note.path}")
 
 @template_app.command("create")
 def create_template_command(

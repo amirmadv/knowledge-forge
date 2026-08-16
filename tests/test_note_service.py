@@ -7,6 +7,7 @@ import pytest
 from knowledgeforge.domain.note import (
     InvalidNoteTitleError,
     NoteAlreadyExistsError,
+    NoteNotFoundError,
     NoteService,
 )
 
@@ -283,3 +284,182 @@ def test_create_rejects_invalid_status(
             "Python",
             status="invalid",
         )
+
+def test_delete_removes_existing_note(
+    tmp_path: Path,
+) -> None:
+    """Deleting a note should remove its Markdown file."""
+    service = NoteService(tmp_path / "vault")
+
+    created = service.create(
+        "Linear Regression",
+        note_type="research",
+        status="active",
+        tags=("machine-learning", "regression"),
+    )
+
+    deleted = service.delete("Linear Regression")
+
+    assert deleted.title == "Linear Regression"
+    assert deleted.path == created.path
+    assert not created.path.exists()
+
+
+def test_delete_returns_note_metadata(
+    tmp_path: Path,
+) -> None:
+    """Deleting a note should return its metadata."""
+    service = NoteService(tmp_path / "vault")
+
+    service.create(
+        "Linear Regression",
+        note_type="research",
+        status="active",
+        tags=("machine-learning", "regression"),
+    )
+
+    deleted = service.delete("Linear Regression")
+
+    assert deleted.metadata.note_type == "research"
+    assert deleted.metadata.status == "active"
+    assert deleted.metadata.tags == (
+        "machine-learning",
+        "regression",
+    )
+
+
+def test_delete_rejects_missing_note(
+    tmp_path: Path,
+) -> None:
+    """Deleting a missing note should raise NoteNotFoundError."""
+    service = NoteService(tmp_path / "vault")
+
+    with pytest.raises(
+        NoteNotFoundError,
+        match="Note not found",
+    ):
+        service.delete("Linear Regression")        
+
+def test_list_filters_notes_by_type(
+    tmp_path: Path,
+) -> None:
+    """Listing should filter notes by note type."""
+    service = NoteService(tmp_path / "vault")
+
+    service.create(
+        "Linear Regression",
+        note_type="research",
+    )
+    service.create(
+        "Python",
+        note_type="concept",
+    )
+
+    results = service.list_notes(note_type="research")
+
+    assert len(results) == 1
+    assert results[0].title == "Linear Regression"
+
+
+def test_list_filters_notes_by_status(
+    tmp_path: Path,
+) -> None:
+    """Listing should filter notes by status."""
+    service = NoteService(tmp_path / "vault")
+
+    service.create(
+        "Linear Regression",
+        status="active",
+    )
+    service.create(
+        "Python",
+        status="draft",
+    )
+
+    results = service.list_notes(status="active")
+
+    assert len(results) == 1
+    assert results[0].title == "Linear Regression"
+
+
+def test_list_filters_notes_by_tag(
+    tmp_path: Path,
+) -> None:
+    """Listing should filter notes by tag."""
+    service = NoteService(tmp_path / "vault")
+
+    service.create(
+        "Linear Regression",
+        tags=("machine-learning", "regression"),
+    )
+    service.create(
+        "Python",
+        tags=("programming",),
+    )
+
+    results = service.list_notes(
+        tag="machine-learning",
+    )
+
+    assert len(results) == 1
+    assert results[0].title == "Linear Regression"
+
+
+def test_list_combines_metadata_filters(
+    tmp_path: Path,
+) -> None:
+    """Multiple metadata filters should be combined with AND."""
+    service = NoteService(tmp_path / "vault")
+
+    service.create(
+        "Linear Regression",
+        note_type="research",
+        status="active",
+        tags=("machine-learning",),
+    )
+
+    service.create(
+        "Python",
+        note_type="research",
+        status="draft",
+        tags=("machine-learning",),
+    )
+
+    service.create(
+        "Neural Networks",
+        note_type="concept",
+        status="active",
+        tags=("machine-learning",),
+    )
+
+    results = service.list_notes(
+        note_type="research",
+        status="active",
+        tag="machine-learning",
+    )
+
+    assert len(results) == 1
+    assert results[0].title == "Linear Regression"
+
+
+def test_list_without_filters_returns_all_notes(
+    tmp_path: Path,
+) -> None:
+    """Listing without filters should return every note."""
+    service = NoteService(tmp_path / "vault")
+
+    service.create("Linear Regression")
+    service.create("Python")
+    service.create("Neural Networks")
+
+    results = service.list_notes()
+
+    assert len(results) == 3
+    assert [
+        note.title
+        for note in results
+    ] == [
+        "Linear Regression",
+        "Neural Networks",
+        "Python",
+    ]        

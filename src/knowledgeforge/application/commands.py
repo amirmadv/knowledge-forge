@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from knowledgeforge.domain.note import Note, NoteService
+from knowledgeforge.domain.relationship import (
+    NoteRelation,
+    RelationshipService,
+)
 from knowledgeforge.domain.template import (
     InvalidTemplateNameError,
     Template,
@@ -112,13 +116,20 @@ def create_note(
 
 def list_notes(
     vault_path: Path | None = None,
+    note_type: str | None = None,
+    status: str | None = None,
+    tag: str | None = None,
 ) -> list[Note]:
-    """List all notes in the configured vault."""
+    """List notes with optional metadata filters."""
     service = NoteService(
         vault_path=_resolve_vault_path(vault_path),
     )
 
-    return service.list_notes()
+    return service.list_notes(
+        note_type=note_type,
+        status=status,
+        tag=tag,
+    )
 
 
 def show_note(
@@ -157,6 +168,22 @@ def update_note(
     )
 
 
+def delete_note(
+    title: str,
+    vault_path: Path | None = None,
+) -> CommandResult:
+    """Delete an existing note."""
+    service = NoteService(
+        vault_path=_resolve_vault_path(vault_path),
+    )
+
+    note = service.delete(title)
+
+    return CommandResult(
+        message="Note deleted successfully.",
+        note=note,
+    )
+
 def search_notes(
     query: str,
     vault_path: Path | None = None,
@@ -167,6 +194,58 @@ def search_notes(
     )
 
     return service.search(query)
+
+def _create_relationship_service(
+    vault_path: Path | None = None,
+) -> RelationshipService:
+    """Create a relationship service for the configured vault."""
+    resolved_vault_path = _resolve_vault_path(vault_path)
+
+    return RelationshipService(
+        vault_path=resolved_vault_path,
+    )
+
+
+def add_note_relationship(
+    source_title: str,
+    target_title: str,
+    relation_type: str = "related",
+    vault_path: Path | None = None,
+) -> NoteRelation:
+    """Create a relationship between two notes."""
+    service = _create_relationship_service(vault_path)
+
+    return service.add(
+        source_title=source_title,
+        target_title=target_title,
+        relation_type=relation_type,
+    )
+
+
+def remove_note_relationship(
+    source_title: str,
+    target_title: str,
+    relation_type: str = "related",
+    vault_path: Path | None = None,
+) -> NoteRelation:
+    """Remove a relationship between two notes."""
+    service = _create_relationship_service(vault_path)
+
+    return service.remove(
+        source_title=source_title,
+        target_title=target_title,
+        relation_type=relation_type,
+    )
+
+
+def list_note_relationships(
+    title: str,
+    vault_path: Path | None = None,
+) -> list[NoteRelation]:
+    """List all relationships involving a note."""
+    service = _create_relationship_service(vault_path)
+
+    return service.list_for(title)
 
 
 def list_templates(
