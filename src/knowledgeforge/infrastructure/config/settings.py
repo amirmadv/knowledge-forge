@@ -35,6 +35,12 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    ai_enabled: bool = False
+    ai_base_url: str = "https://api.openai.com/v1"
+    ai_api_key: str = ""
+    ai_model: str = "gpt-4o-mini"
+    ai_timeout: float = 60.0
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
