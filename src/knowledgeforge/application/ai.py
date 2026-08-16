@@ -6,10 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from knowledgeforge.domain.note import NoteService
-from knowledgeforge.infrastructure.ai.client import (
-    AIClientError,
-    OpenAICompatibleClient,
-)
+from knowledgeforge.infrastructure.ai.client import AIClientError, OpenAICompatibleClient
 from knowledgeforge.infrastructure.config.settings import Settings
 
 
@@ -21,13 +18,9 @@ class AIAnswer:
 
 
 class KnowledgeAgent:
-    """Minimal agent facade that can answer using local vault context."""
+    """Minimal agent facade that answers with local vault context."""
 
-    def __init__(
-        self,
-        settings: Settings,
-        vault_path: Path | None = None,
-    ) -> None:
+    def __init__(self, settings: Settings, vault_path: Path | None = None) -> None:
         if not settings.ai_enabled:
             raise AIClientError("AI is disabled. Set KNOWLEDGEFORGE_AI_ENABLED=true.")
         if not settings.ai_api_key:
@@ -42,17 +35,12 @@ class KnowledgeAgent:
         self._note_service = NoteService(vault_path or settings.vault_path)
 
     def ask(self, question: str) -> AIAnswer:
-        """Answer a question with relevant local note context."""
+        """Answer a question using relevant local note context."""
         notes = self._note_service.search(question)
-        context_parts: list[str] = []
-
-        for note in notes[:8]:
-            try:
-                _, content = self._note_service.get(note.title), self._note_service.read(note.title)
-            except (AttributeError, TypeError):
-                content = ""
-            context_parts.append(f"# {note.title}\n{content}")
-
+        context_parts = [
+            f"# {note.title}\n{self._note_service.read_content(note.title)}"
+            for note in notes[:8]
+        ]
         context = "\n\n".join(context_parts)
         prompt = (
             "Answer the user's question using the supplied KnowledgeForge notes when relevant. "
