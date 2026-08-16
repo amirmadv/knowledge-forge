@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 knowledgeforge = "knowledgeforge.cli:app"
+knowledgeforge-ai = "knowledgeforge.ai_cli:app"
 
 [dependency-groups]
 dev = [
