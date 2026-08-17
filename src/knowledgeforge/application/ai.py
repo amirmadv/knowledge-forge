@@ -124,6 +124,10 @@ class KnowledgeAgent:
         """Inspect the graph neighborhood of a note."""
         return self._graph_service.graph(title, depth=depth)
 
+    def rebuild_semantic_index(self) -> int:
+        """Rebuild the persisted semantic index for the local vault."""
+        return self._semantic_retriever.rebuild()
+
     def _retrieve_context_notes(self, question: str) -> list[Note]:
         """Retrieve ranked matches and expand them through the note graph."""
         seeds = self._search_question(question)
