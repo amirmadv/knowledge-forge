@@ -75,7 +75,11 @@ class KnowledgeToolRegistry:
         """Return tool specifications in stable registration order."""
         return tuple(tool.spec for tool in self._tools.values())
 
-    def execute(self, name: str, arguments: dict[str, Any] | None = None) -> ToolResult:
+    def execute(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> ToolResult:
         """Execute one registered tool with a JSON-like argument mapping."""
         if arguments is not None and not isinstance(arguments, dict):
             raise ToolArgumentError("Tool arguments must be an object.")
@@ -106,12 +110,21 @@ class SearchKnowledgeTool:
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="search_knowledge",
-            description="Search the local vault using hybrid retrieval and return ranked evidence.",
+            description=(
+                "Search the local vault using hybrid retrieval and return ranked evidence."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Natural-language search query."},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "query": {
+                        "type": "string",
+                        "description": "Natural-language search query.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20,
+                    },
                 },
                 "required": ["query"],
                 "additionalProperties": False,
@@ -138,7 +151,9 @@ class InspectNoteGraphTool:
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="inspect_note_graph",
-            description="Inspect incoming and outgoing relationships around a note.",
+            description=(
+                "Inspect incoming and outgoing relationships around a note."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
@@ -183,7 +198,12 @@ class GetNoteTool:
             description="Read a note's metadata and complete Markdown content.",
             input_schema={
                 "type": "object",
-                "properties": {"title": {"type": "string", "description": "Note title."}},
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Note title.",
+                    }
+                },
                 "required": ["title"],
                 "additionalProperties": False,
             },
@@ -192,13 +212,20 @@ class GetNoteTool:
     def execute(self, arguments: dict[str, Any]) -> ToolResult:
         title = _required_string(arguments, "title")
         note = self._note_service.get(title)
-        return ToolResult(tool_name=self.spec.name, data={"note": _note_to_dict(note)})
+        return ToolResult(
+            tool_name=self.spec.name,
+            data={"note": _note_to_dict(note)},
+        )
 
 
 class ListRelatedNotesTool:
     """List direct graph neighbors with their note metadata."""
 
-    def __init__(self, note_service: NoteService, graph_service: GraphService) -> None:
+    def __init__(
+        self,
+        note_service: NoteService,
+        graph_service: GraphService,
+    ) -> None:
         self._note_service = note_service
         self._graph_service = graph_service
 
@@ -206,10 +233,17 @@ class ListRelatedNotesTool:
     def spec(self) -> ToolSpec:
         return ToolSpec(
             name="list_related_notes",
-            description="List notes directly connected to a selected note in either direction.",
+            description=(
+                "List notes directly connected to a selected note in either direction."
+            ),
             input_schema={
                 "type": "object",
-                "properties": {"title": {"type": "string", "description": "Note title."}},
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Note title.",
+                    }
+                },
                 "required": ["title"],
                 "additionalProperties": False,
             },
@@ -221,7 +255,13 @@ class ListRelatedNotesTool:
         notes = {note.slug: note for note in self._note_service.list_notes()}
         return ToolResult(
             tool_name=self.spec.name,
-            data={"notes": [_note_to_dict(notes[slug]) for slug in slugs if slug in notes]},
+            data={
+                "notes": [
+                    _note_to_dict(notes[slug])
+                    for slug in slugs
+                    if slug in notes
+                ]
+            },
         )
 
 
@@ -240,7 +280,9 @@ def build_knowledge_tool_registry(agent: Any) -> KnowledgeToolRegistry:
 def _required_string(arguments: dict[str, Any], name: str) -> str:
     value = arguments.get(name)
     if not isinstance(value, str) or not value.strip():
-        raise ToolArgumentError(f"Tool argument '{name}' must be a non-empty string.")
+        raise ToolArgumentError(
+            f"Tool argument '{name}' must be a non-empty string."
+        )
     return value.strip()
 
 
