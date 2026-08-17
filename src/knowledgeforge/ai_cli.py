@@ -9,6 +9,7 @@ from typing import Annotated
 import typer
 
 from knowledgeforge.application.ai import KnowledgeAgent
+from knowledgeforge.application.agent_runtime import AgentRunResult
 from knowledgeforge.application.chat import KnowledgeChatSession
 from knowledgeforge.application.copilot import KnowledgeCopilot
 from knowledgeforge.application.evaluation import (
@@ -71,6 +72,60 @@ def _print_retrieval_evidence(evidence: list[RetrievalEvidence]) -> None:
         typer.echo()
 
 
+def _agent_payload(result: AgentRunResult) -> dict[str, object]:
+    """Build a stable JSON representation of one bounded agent run."""
+    return {
+        "answer": result.answer,
+        "trace": {
+            "tool_call_count": result.trace.tool_call_count,
+            "termination_reason": result.trace.termination_reason,
+            "steps": [
+                {
+                    "response": {
+                        "content": step.response.content,
+                        "tool_calls": [
+                            {
+                                "call_id": call.call_id,
+                                "name": call.name,
+                                "arguments": call.arguments,
+                            }
+                            for call in step.response.tool_calls
+                        ],
+                    },
+                    "observations": [
+                        {
+                            "call_id": observation.call_id,
+                            "tool_name": observation.tool_name,
+                            "success": observation.success,
+                            "data": observation.data,
+                            "error": observation.error,
+                        }
+                        for observation in step.observations
+                    ],
+                }
+                for step in result.trace.steps
+            ],
+        },
+    }
+
+
+def _print_agent_text(result: AgentRunResult) -> None:
+    """Print a human-readable agent result with trace summary."""
+    typer.echo(result.answer)
+    typer.echo("\nAgent trace:")
+    typer.echo(f"- termination: {result.trace.termination_reason}")
+    typer.echo(f"- tool calls: {result.trace.tool_call_count}")
+    typer.echo(f"- model steps: {len(result.trace.steps)}")
+
+    for index, step in enumerate(result.trace.steps, start=1):
+        if not step.observations:
+            continue
+        typer.echo(f"\nStep {index} tools:")
+        for observation in step.observations:
+            status = "ok" if observation.success else "failed"
+            typer.echo(f"- {observation.tool_name}: {status}")
+
+
 def _evaluation_payload(dataset: Path, report, k: int) -> dict[str, object]:
     """Build a stable JSON-serializable retrieval evaluation payload."""
     result = report.result
@@ -117,6 +172,36 @@ def ask(question: str) -> None:
         raise typer.Exit(code=1) from exc
 
     _print_answer(result.answer, result.sources)
+
+
+@app.command("agent")
+def agent(
+    prompt: str,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            help="Output format: text or json.",
+        ),
+    ] = "text",
+) -> None:
+    """Run the bounded tool-using KnowledgeForge agent."""
+    output = output.casefold()
+    if output not in {"text", "json"}:
+        typer.echo("Output format must be 'text' or 'json'.", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        result = _agent().run_agent(prompt)
+    except Exception as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    if output == "json":
+        typer.echo(json.dumps(_agent_payload(result), indent=2, ensure_ascii=False, sort_keys=True))
+        return
+
+    _print_agent_text(result)
 
 
 @app.command("search")
