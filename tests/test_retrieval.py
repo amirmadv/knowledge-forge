@@ -2,12 +2,15 @@
 
 from pathlib import Path
 
+from knowledgeforge.application.commands import (
+    add_note_relationship,
+    create_note,
+    update_note,
+)
 from knowledgeforge.application.retrieval import ContextBuilder, HybridRetriever
 from knowledgeforge.application.semantic import SemanticMatch
 from knowledgeforge.domain.graph import GraphService
 from knowledgeforge.domain.note import NoteService
-from knowledgeforge.domain.relationship import RelationshipService
-from knowledgeforge.application.commands import add_note_relationship, create_note, update_note
 
 
 class FakeSemanticRetriever:
