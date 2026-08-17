@@ -1,1 +1,0 @@
-Retrieval explainability CLI milestone is implemented on agent/retrieval-cli-evaluation. See docs/adr/ADR-0006-retrieval-cli-explainability.md and .ai/task-report-retrieval-cli.md.
