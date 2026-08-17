@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -76,12 +77,17 @@ def ask(question: str) -> None:
 @app.command("search")
 def search(
     query: str,
-    limit: int = typer.Option(8, min=1, max=50, help="Maximum number of results."),
-    explain: bool = typer.Option(
-        False,
-        "--explain",
-        help="Show score contributions and retrieval reasons.",
-    ),
+    limit: Annotated[
+        int,
+        typer.Option(min=1, max=50, help="Maximum number of results."),
+    ] = 8,
+    explain: Annotated[
+        bool,
+        typer.Option(
+            "--explain",
+            help="Show score contributions and retrieval reasons.",
+        ),
+    ] = False,
 ) -> None:
     """Search the local vault and optionally explain the ranking."""
     try:
@@ -105,47 +111,62 @@ def search(
 
 @app.command("evaluate")
 def evaluate(
-    dataset: Path = typer.Argument(
-        ...,
-        exists=True,
-        dir_okay=False,
-        readable=True,
-        help="JSON retrieval evaluation dataset.",
-    ),
-    k: int = typer.Option(
-        5,
-        min=1,
-        max=50,
-        help="Number of top-ranked results used by the metrics.",
-    ),
-    min_precision: float = typer.Option(
-        0.0,
-        min=0.0,
-        max=1.0,
-        help="Minimum required precision@k.",
-    ),
-    min_recall: float = typer.Option(
-        0.0,
-        min=0.0,
-        max=1.0,
-        help="Minimum required recall@k.",
-    ),
-    min_mrr: float = typer.Option(
-        0.0,
-        min=0.0,
-        max=1.0,
-        help="Minimum required mean reciprocal rank.",
-    ),
-    details: bool = typer.Option(
-        False,
-        "--details",
-        help="Print per-query retrieval metrics and ranked note slugs.",
-    ),
-    fail_on_gate: bool = typer.Option(
-        True,
-        "--fail-on-gate/--no-fail-on-gate",
-        help="Return a non-zero exit code when the quality gate fails.",
-    ),
+    dataset: Annotated[
+        Path,
+        typer.Argument(
+            ...,
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="JSON retrieval evaluation dataset.",
+        ),
+    ],
+    k: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            max=50,
+            help="Number of top-ranked results used by the metrics.",
+        ),
+    ] = 5,
+    min_precision: Annotated[
+        float,
+        typer.Option(
+            min=0.0,
+            max=1.0,
+            help="Minimum required precision@k.",
+        ),
+    ] = 0.0,
+    min_recall: Annotated[
+        float,
+        typer.Option(
+            min=0.0,
+            max=1.0,
+            help="Minimum required recall@k.",
+        ),
+    ] = 0.0,
+    min_mrr: Annotated[
+        float,
+        typer.Option(
+            min=0.0,
+            max=1.0,
+            help="Minimum required mean reciprocal rank.",
+        ),
+    ] = 0.0,
+    details: Annotated[
+        bool,
+        typer.Option(
+            "--details",
+            help="Print per-query retrieval metrics and ranked note slugs.",
+        ),
+    ] = False,
+    fail_on_gate: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-gate/--no-fail-on-gate",
+            help="Return a non-zero exit code when the quality gate fails.",
+        ),
+    ] = True,
 ) -> None:
     """Evaluate hybrid retrieval against an offline gold dataset."""
     try:
