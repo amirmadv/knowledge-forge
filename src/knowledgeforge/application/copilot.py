@@ -28,8 +28,8 @@ class KnowledgeCopilot:
         client: OpenAICompatibleClient | None = None,
     ) -> None:
         self._agent = agent
-        self._note_service = note_service or agent._note_service
-        self._client = client or agent._client
+        self._note_service = note_service or agent.note_service
+        self._client = client or agent.client
 
     def summarize(self, title: str) -> CopilotResult:
         """Create a concise, structured summary of a note."""
@@ -74,7 +74,7 @@ class KnowledgeCopilot:
 
     def related(self, title: str) -> CopilotResult:
         """Find related notes using the existing graph-aware agent."""
-        note, content = self._load_note(title)
+        note = self._note_service.get(title)
         question = (
             "Which existing KnowledgeForge notes are most closely related to "
             f"'{note.title}'? Explain the relationship using the supplied vault "
@@ -99,8 +99,7 @@ class KnowledgeCopilot:
             extra=f"Graph nodes: {', '.join(node.slug for node in graph.nodes)}",
         )
         answer = self._client.chat(prompt, system=self._system())
-        sources = (note.title,)
-        return CopilotResult(answer=answer, sources=sources)
+        return CopilotResult(answer=answer, sources=(note.title,))
 
     def create_note(
         self,
@@ -109,6 +108,9 @@ class KnowledgeCopilot:
     ) -> CopilotResult:
         """Create a new note body from a user instruction."""
         normalized_instruction = instruction.strip()
+        normalized_title = title.strip()
+        if not normalized_title:
+            raise ValueError("Note title cannot be empty.")
         if not normalized_instruction:
             raise ValueError("Instruction cannot be empty.")
 
@@ -117,11 +119,11 @@ class KnowledgeCopilot:
             "Use only information explicitly supported by the instruction. "
             "If information is missing, keep the note focused instead of inventing it. "
             "Return only the Markdown body.\n\n"
-            f"Title: {title.strip()}\n"
+            f"Title: {normalized_title}\n"
             f"Instruction: {normalized_instruction}"
         )
         body = self._client.chat(prompt, system=self._system())
-        note = self._note_service.create(title)
+        note = self._note_service.create(normalized_title)
         updated = self._note_service.update_content(note.title, body)
         return CopilotResult(
             answer=f"Created note: {updated.title}",
