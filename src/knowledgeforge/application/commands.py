@@ -112,8 +112,9 @@ def create_note(
     note_type: str = "concept",
     status: str = "draft",
     tags: tuple[str, ...] = (),
+    content: str | None = None,
 ) -> CommandResult:
-    """Create a new note using the requested template."""
+    """Create a new note and optionally replace its initial body content."""
     note_service = _create_note_service(
         vault_path=vault_path,
         templates_path=templates_path,
@@ -126,6 +127,12 @@ def create_note(
         status=status,
         tags=tags,
     )
+
+    if content is not None:
+        note = note_service.update(
+            title=title,
+            content=content,
+        )
 
     return CommandResult(
         message="Note created successfully.",
