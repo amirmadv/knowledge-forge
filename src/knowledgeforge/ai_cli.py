@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 from knowledgeforge.application.ai import KnowledgeAgent
 from knowledgeforge.application.chat import KnowledgeChatSession
 from knowledgeforge.application.copilot import KnowledgeCopilot
+from knowledgeforge.application.evaluation import (
+    evaluate_retriever,
+    load_retrieval_evaluation_cases,
+)
 from knowledgeforge.application.retrieval import RetrievalEvidence
 from knowledgeforge.infrastructure.config.settings import Settings
 
@@ -95,6 +101,103 @@ def search(
 
     for rank, item in enumerate(evidence, start=1):
         typer.echo(f"{rank}. {item.note.title} ({item.score:.3f})")
+
+
+@app.command("evaluate")
+def evaluate(
+    dataset: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="JSON retrieval evaluation dataset.",
+    ),
+    k: int = typer.Option(
+        5,
+        min=1,
+        max=50,
+        help="Number of top-ranked results used by the metrics.",
+    ),
+    min_precision: float = typer.Option(
+        0.0,
+        min=0.0,
+        max=1.0,
+        help="Minimum required precision@k.",
+    ),
+    min_recall: float = typer.Option(
+        0.0,
+        min=0.0,
+        max=1.0,
+        help="Minimum required recall@k.",
+    ),
+    min_mrr: float = typer.Option(
+        0.0,
+        min=0.0,
+        max=1.0,
+        help="Minimum required mean reciprocal rank.",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Print per-query retrieval metrics and ranked note slugs.",
+    ),
+    fail_on_gate: bool = typer.Option(
+        True,
+        "--fail-on-gate/--no-fail-on-gate",
+        help="Return a non-zero exit code when the quality gate fails.",
+    ),
+) -> None:
+    """Evaluate hybrid retrieval against an offline gold dataset."""
+    try:
+        cases = load_retrieval_evaluation_cases(dataset)
+        agent = _agent()
+
+        report = evaluate_retriever(
+            cases,
+            lambda query, limit: [
+                evidence.note.slug
+                for evidence in agent.search_with_evidence(query, limit=limit)
+            ],
+            k=k,
+            min_precision_at_k=min_precision,
+            min_recall_at_k=min_recall,
+            min_mrr=min_mrr,
+        )
+    except Exception as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    result = report.result
+    gate = report.quality_gate
+
+    typer.echo("KnowledgeForge Retrieval Evaluation")
+    typer.echo(f"Dataset: {dataset}")
+    typer.echo(f"Queries: {result.queries_evaluated}")
+    typer.echo(f"Precision@{k}: {result.precision_at_k:.4f}")
+    typer.echo(f"Recall@{k}: {result.recall_at_k:.4f}")
+    typer.echo(f"MRR: {result.mrr:.4f}")
+    typer.echo(
+        "Quality gate: "
+        f"{'PASSED' if gate.passed else 'FAILED'}"
+    )
+
+    if gate.failures:
+        typer.echo("Failures:")
+        for failure in gate.failures:
+            typer.echo(f"- {failure}")
+
+    if details:
+        typer.echo("\nCases:")
+        for index, item in enumerate(report.items, start=1):
+            retrieved = ", ".join(item.retrieved) or "(none)"
+            typer.echo(f"\n{index}. {item.query}")
+            typer.echo(f"   precision@{k}: {item.precision_at_k:.4f}")
+            typer.echo(f"   recall@{k}: {item.recall_at_k:.4f}")
+            typer.echo(f"   reciprocal rank: {item.reciprocal_rank:.4f}")
+            typer.echo(f"   retrieved: {retrieved}")
+
+    if fail_on_gate and not gate.passed:
+        raise typer.Exit(code=2)
 
 
 @app.command("chat")
