@@ -23,6 +23,21 @@ class RetrievalMatch:
 
 
 @dataclass(frozen=True, slots=True)
+class RetrievalEvidence:
+    """Explainable evidence for one hybrid retrieval result."""
+
+    note: Note
+    score: float
+    semantic_score: float
+    lexical_score: float
+    metadata_score: float
+    semantic_contribution: float
+    lexical_contribution: float
+    metadata_contribution: float
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class SourceRef:
     """A stable source marker exposed to the grounded LLM prompt."""
 
@@ -39,6 +54,7 @@ class HybridRetriever:
     METADATA_WEIGHT = 0.10
     MIN_SEMANTIC_SCORE = 0.20
     MIN_LEXICAL_SCORE = 0.01
+    REASON_SCORE_EPSILON = 1e-9
 
     def __init__(
         self,
@@ -50,6 +66,17 @@ class HybridRetriever:
 
     def search(self, query: str, limit: int = 8) -> list[RetrievalMatch]:
         """Return notes ranked by combined retrieval signals."""
+        return [
+            evidence_to_match(evidence)
+            for evidence in self.search_with_evidence(query, limit=limit)
+        ]
+
+    def search_with_evidence(
+        self,
+        query: str,
+        limit: int = 8,
+    ) -> list[RetrievalEvidence]:
+        """Return ranked notes together with explainable retrieval signals."""
         normalized_query = query.strip()
         if not normalized_query or limit <= 0:
             return []
@@ -60,7 +87,7 @@ class HybridRetriever:
 
         terms = self._terms(normalized_query)
         semantic_by_slug = self._semantic_matches(normalized_query)
-        matches: list[RetrievalMatch] = []
+        evidence: list[RetrievalEvidence] = []
 
         for note in notes:
             content = self._note_service.read_content(note.title)
@@ -80,31 +107,45 @@ class HybridRetriever:
             ):
                 continue
 
+            semantic_contribution = self.SEMANTIC_WEIGHT * semantic_score
+            lexical_contribution = self.LEXICAL_WEIGHT * lexical_score
+            metadata_contribution = self.METADATA_WEIGHT * metadata_score
             score = (
-                self.SEMANTIC_WEIGHT * semantic_score
-                + self.LEXICAL_WEIGHT * lexical_score
-                + self.METADATA_WEIGHT * metadata_score
+                semantic_contribution
+                + lexical_contribution
+                + metadata_contribution
             )
-            matches.append(
-                RetrievalMatch(
+            evidence.append(
+                RetrievalEvidence(
                     note=note,
                     score=score,
-                    lexical_score=lexical_score,
                     semantic_score=semantic_score,
+                    lexical_score=lexical_score,
                     metadata_score=metadata_score,
+                    semantic_contribution=semantic_contribution,
+                    lexical_contribution=lexical_contribution,
+                    metadata_contribution=metadata_contribution,
+                    reasons=self._reasons(
+                        semantic_score=semantic_score,
+                        lexical_score=lexical_score,
+                        metadata_score=metadata_score,
+                        terms=terms,
+                        note=note,
+                        content=content,
+                    ),
                 )
             )
 
-        matches.sort(
-            key=lambda match: (
-                match.score,
-                match.lexical_score,
-                match.semantic_score,
-                match.note.title.casefold(),
-            ),
-            reverse=True,
+        evidence.sort(
+            key=lambda item: (
+                -item.score,
+                -item.lexical_score,
+                -item.semantic_score,
+                -item.metadata_score,
+                item.note.title.casefold(),
+            )
         )
-        return matches[:limit]
+        return evidence[:limit]
 
     def _semantic_matches(self, query: str) -> dict[str, float]:
         try:
@@ -119,6 +160,38 @@ class HybridRetriever:
             match.note.slug: max(0.0, min(1.0, match.score))
             for match in matches
         }
+
+    @classmethod
+    def _reasons(
+        cls,
+        *,
+        semantic_score: float,
+        lexical_score: float,
+        metadata_score: float,
+        terms: tuple[str, ...],
+        note: Note,
+        content: str,
+    ) -> tuple[str, ...]:
+        """Describe the retrieval signals that contributed to the result."""
+        reasons: list[str] = []
+        if semantic_score >= cls.MIN_SEMANTIC_SCORE:
+            reasons.append("semantic similarity")
+
+        title = note.title.casefold()
+        body = content.casefold()
+        query = " ".join(terms)
+        if lexical_score >= cls.MIN_LEXICAL_SCORE:
+            if query and query in title:
+                reasons.append("title lexical match")
+            elif query and query in body:
+                reasons.append("body lexical match")
+            else:
+                reasons.append("title/body lexical match")
+
+        if metadata_score > 0:
+            reasons.append("metadata/tag match")
+
+        return tuple(reasons)
 
     @staticmethod
     def _terms(query: str) -> tuple[str, ...]:
@@ -174,6 +247,17 @@ class HybridRetriever:
             for term in terms
         )
         return min(1.0, hits / len(terms))
+
+
+def evidence_to_match(evidence: RetrievalEvidence) -> RetrievalMatch:
+    """Convert explainable evidence to the legacy retrieval result shape."""
+    return RetrievalMatch(
+        note=evidence.note,
+        score=evidence.score,
+        lexical_score=evidence.lexical_score,
+        semantic_score=evidence.semantic_score,
+        metadata_score=evidence.metadata_score,
+    )
 
 
 class ContextBuilder:
