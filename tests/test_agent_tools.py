@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from knowledgeforge.application.ai import KnowledgeAgent
-from knowledgeforge.application.commands import add_note_relationship, create_note, update_note
+from knowledgeforge.application.commands import (
+    add_note_relationship,
+    create_note,
+    update_note,
+)
 from knowledgeforge.application.tools import (
     KnowledgeToolRegistry,
     ToolArgumentError,
