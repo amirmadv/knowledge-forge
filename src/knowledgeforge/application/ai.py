@@ -86,9 +86,21 @@ class KnowledgeAgent:
         return self._note_service
 
     @property
+    def graph_service(self) -> GraphService:
+        """Expose the configured graph service to cooperating use cases."""
+        return self._graph_service
+
+    @property
     def client(self) -> OpenAICompatibleClient:
         """Expose the configured AI client to cooperating use cases."""
         return self._client
+
+    @property
+    def tools(self):
+        """Expose the provider-neutral core tool registry."""
+        from knowledgeforge.application.tools import build_knowledge_tool_registry
+
+        return build_knowledge_tool_registry(self)
 
     def ask(
         self,
