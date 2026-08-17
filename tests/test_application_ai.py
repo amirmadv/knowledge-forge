@@ -3,7 +3,11 @@
 from pathlib import Path
 
 from knowledgeforge.application.ai import KnowledgeAgent
-from knowledgeforge.application.commands import add_note_relationship, create_note
+from knowledgeforge.application.commands import (
+    add_note_relationship,
+    create_note,
+    update_note,
+)
 from knowledgeforge.infrastructure.config.settings import Settings
 
 
@@ -60,6 +64,58 @@ def test_agent_uses_note_content_and_graph_context(tmp_path: Path) -> None:
     assert "Gradient Descent" in client.prompt
     assert "prerequisite" in client.prompt
     assert "KnowledgeForge personal knowledge agent" in client.system
+
+
+def test_agent_includes_graph_neighbor_note_content(tmp_path: Path) -> None:
+    """RAG context should include content from directly connected notes."""
+    vault_path = tmp_path / "vault"
+    create_note(title="Linear Regression", vault_path=vault_path)
+    create_note(title="Gradient Descent", vault_path=vault_path)
+    update_note(
+        title="Gradient Descent",
+        content="Gradient descent updates model parameters by following the loss gradient.",
+        vault_path=vault_path,
+    )
+    add_note_relationship(
+        source_title="Linear Regression",
+        target_title="Gradient Descent",
+        relation_type="prerequisite",
+        vault_path=vault_path,
+    )
+
+    client = FakeAIClient()
+    agent = KnowledgeAgent(
+        settings=_settings(vault_path),
+        client=client,
+    )
+
+    agent.ask("Explain Linear Regression")
+
+    assert "# Note: Linear Regression" in client.prompt
+    assert "# Note: Gradient Descent" in client.prompt
+    assert "Gradient descent updates model parameters" in client.prompt
+
+
+def test_agent_falls_back_to_query_terms(tmp_path: Path) -> None:
+    """Natural-language questions should retrieve notes when exact search misses."""
+    vault_path = tmp_path / "vault"
+    create_note(title="Linear Regression", vault_path=vault_path)
+    update_note(
+        title="Linear Regression",
+        content="Linear regression predicts a target using a weighted linear combination of features.",
+        vault_path=vault_path,
+    )
+
+    client = FakeAIClient()
+    agent = KnowledgeAgent(
+        settings=_settings(vault_path),
+        client=client,
+    )
+
+    agent.ask("How does linear regression work?")
+
+    assert "# Note: Linear Regression" in client.prompt
+    assert "weighted linear combination" in client.prompt
 
 
 def test_agent_inspects_note_graph(tmp_path: Path) -> None:
