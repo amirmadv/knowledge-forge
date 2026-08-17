@@ -13,10 +13,12 @@ before asking an OpenAI-compatible model for an answer.
 - Note metadata, tags, templates, and search
 - Directed knowledge graph with ancestors, descendants, backlinks, and neighborhoods
 - Graph-aware AI agent with local-first RAG retrieval
+- Bounded conversational memory for follow-up AI questions
 - Grounded source-note reporting for every AI answer
 - OpenAI-compatible provider client
 - CLI for normal KnowledgeForge operations and AI questions
-- 101 automated tests currently passing on the development environment
+- Interactive `knowledgeforge-ai chat` mode
+- 104 automated tests currently passing on the development environment
 
 ## Requirements
 
@@ -73,11 +75,20 @@ Then ask the agent:
 knowledgeforge-ai ask "How does linear regression relate to gradient descent?"
 ```
 
+For a multi-turn session with short-term conversational memory:
+
+```powershell
+knowledgeforge-ai chat
+```
+
+Inside chat, use `/clear` to reset conversation memory and `/exit` to leave.
+
 The agent first searches the local vault. If a full-question match is not found,
 it falls back to meaningful query terms and then expands matching notes through
-the knowledge graph. This keeps the AI grounded in the user's own knowledge.
+the knowledge graph. Follow-up questions can also use the recent conversation to
+resolve references, while the vault remains the source of truth.
 
-The CLI also prints the note titles used as grounded sources for the answer.
+The CLI prints the note titles used as grounded sources for each answer.
 
 ## Development checks
 
