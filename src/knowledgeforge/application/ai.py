@@ -6,7 +6,11 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from knowledgeforge.application.retrieval import ContextBuilder, HybridRetriever
+from knowledgeforge.application.retrieval import (
+    ContextBuilder,
+    HybridRetriever,
+    SourceRef,
+)
 from knowledgeforge.application.semantic import SemanticRetriever
 from knowledgeforge.domain.graph import GraphService, NoteGraph
 from knowledgeforge.domain.note import Note, NoteService
@@ -90,14 +94,15 @@ class KnowledgeAgent:
         question: str,
         history: tuple[tuple[str, str], ...] = (),
     ) -> AIAnswer:
-        """Answer a question using hybrid retrieval and graph context."""
+        """Answer a question using hybrid retrieval and grounded context."""
         normalized_question = question.strip()
         if not normalized_question:
             raise ValueError("Question cannot be empty.")
 
         notes = self._retrieve_context_notes(normalized_question)
-        context = self._context_builder.build(notes)
+        context, source_refs = self._context_builder.build_with_sources(notes)
         conversation = self._build_history(history)
+        source_instructions = self._build_source_instructions(source_refs)
 
         prompt = (
             "Answer the user's question using the supplied KnowledgeForge "
@@ -105,6 +110,13 @@ class KnowledgeAgent:
             "and graph relationships from the user's vault. Do not invent "
             "facts that are not supported by the context. If the context is "
             "insufficient, state what is missing clearly.\n\n"
+            "Grounding rules:\n"
+            "- Treat the supplied vault context as the source of truth.\n"
+            "- Cite factual claims with source markers such as [S1].\n"
+            "- Use only source markers that exist in the context.\n"
+            "- Do not fabricate citations or source titles.\n"
+            "- When sources disagree, explicitly identify the conflict.\n\n"
+            f"Available sources:\n{source_instructions}\n\n"
             f"Conversation history:\n{conversation}\n\n"
             f"Question:\n{normalized_question}\n\n"
             f"Knowledge context:\n{context or '(no matching notes)'}"
@@ -117,7 +129,8 @@ class KnowledgeAgent:
                     "You are the KnowledgeForge personal knowledge agent. "
                     "Prefer the user's local knowledge over generic assumptions. "
                     "Use conversation history only to resolve references and "
-                    "maintain continuity; the vault remains the source of truth."
+                    "maintain continuity; the vault remains the source of truth. "
+                    "Ground factual claims in the supplied source markers."
                 ),
             ),
             sources=tuple(note.title for note in notes),
@@ -161,6 +174,15 @@ class KnowledgeAgent:
                 break
 
         return list(selected.values())[: self.MAX_CONTEXT_NOTES]
+
+    @staticmethod
+    def _build_source_instructions(sources: tuple[SourceRef, ...]) -> str:
+        """Describe source markers without exposing implementation details."""
+        if not sources:
+            return "(none)"
+        return "\n".join(
+            f"[{source.marker}] {source.title}" for source in sources
+        )
 
     @classmethod
     def _query_terms(cls, question: str) -> list[str]:
