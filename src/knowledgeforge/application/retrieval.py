@@ -1,4 +1,4 @@
-"""Hybrid retrieval and context construction for KnowledgeForge."""
+"""Hybrid retrieval and grounded context construction for KnowledgeForge."""
 
 from __future__ import annotations
 
@@ -20,6 +20,15 @@ class RetrievalMatch:
     lexical_score: float
     semantic_score: float
     metadata_score: float
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRef:
+    """A stable source marker exposed to the grounded LLM prompt."""
+
+    marker: str
+    title: str
+    slug: str
 
 
 class HybridRetriever:
@@ -168,7 +177,7 @@ class HybridRetriever:
 
 
 class ContextBuilder:
-    """Build bounded, grounded LLM context from retrieved notes and graph data."""
+    """Build bounded, grounded LLM context from notes and graph data."""
 
     def __init__(
         self,
@@ -187,17 +196,28 @@ class ContextBuilder:
         self._graph_depth = graph_depth
 
     def build(self, notes: list[Note]) -> str:
-        """Render note content and graph relationships within size limits."""
+        """Render bounded context while preserving the legacy API."""
+        context, _ = self.build_with_sources(notes)
+        return context
+
+    def build_with_sources(
+        self,
+        notes: list[Note],
+    ) -> tuple[str, tuple[SourceRef, ...]]:
+        """Render context and stable source markers for grounded answers."""
         sections: list[str] = []
+        sources: list[SourceRef] = []
         title_by_slug = {
             note.slug: note.title for note in self._note_service.list_notes()
         }
         total_chars = 0
 
-        for note in notes[: self._max_notes]:
+        for index, note in enumerate(notes[: self._max_notes], start=1):
             content = self._note_service.read_content(note.title)
             content = content[: self._max_chars_per_note]
             graph = self._graph_service.graph(note.title, depth=self._graph_depth)
+            marker = f"S{index}"
+            sources.append(SourceRef(marker=marker, title=note.title, slug=note.slug))
 
             edges = "\n".join(
                 "- "
@@ -212,7 +232,7 @@ class ContextBuilder:
             )
 
             section = (
-                f"# Note: {note.title}\n"
+                f"[{marker}] # Note: {note.title}\n"
                 f"Content:\n{content}\n"
                 f"Graph nodes: {nodes or '(none)'}\n"
                 f"Graph edges:\n{edges or '(none)'}"
@@ -220,6 +240,7 @@ class ContextBuilder:
 
             remaining = self._max_total_chars - total_chars
             if remaining <= 0:
+                sources.pop()
                 break
             if len(section) > remaining:
                 section = section[:remaining]
@@ -227,4 +248,4 @@ class ContextBuilder:
             sections.append(section)
             total_chars += len(section)
 
-        return "\n\n---\n\n".join(sections)
+        return "\n\n---\n\n".join(sections), tuple(sources)
