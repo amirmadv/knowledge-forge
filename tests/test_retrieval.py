@@ -95,6 +95,92 @@ def test_hybrid_retriever_returns_empty_for_invalid_query(tmp_path: Path) -> Non
     assert retriever.search("anything", limit=0) == []
 
 
+def test_hybrid_retriever_exposes_score_breakdown_and_reasons(
+    tmp_path: Path,
+) -> None:
+    """Explainable retrieval should expose raw and weighted signals."""
+    vault_path = tmp_path / "vault"
+    create_note(
+        title="Gradient Descent",
+        vault_path=vault_path,
+        tags=("optimization",),
+    )
+    update_note(
+        title="Gradient Descent",
+        content="Gradient descent minimizes loss.",
+        vault_path=vault_path,
+    )
+    note_service, _ = _services(vault_path)
+    note = note_service.list_notes()[0]
+    retriever = HybridRetriever(
+        note_service=note_service,
+        semantic_retriever=FakeSemanticRetriever(
+            [SemanticMatch(note=note, score=0.8)]
+        ),
+    )
+
+    evidence = retriever.search_with_evidence("gradient loss optimization", limit=1)[0]
+
+    assert evidence.note.title == "Gradient Descent"
+    assert evidence.semantic_score == 0.8
+    assert evidence.semantic_contribution == 0.65 * 0.8
+    assert evidence.lexical_contribution == 0.25 * evidence.lexical_score
+    assert evidence.metadata_contribution == 0.10 * evidence.metadata_score
+    assert evidence.score == (
+        evidence.semantic_contribution
+        + evidence.lexical_contribution
+        + evidence.metadata_contribution
+    )
+    assert "semantic similarity" in evidence.reasons
+    assert "title/body lexical match" in evidence.reasons
+    assert "metadata/tag match" in evidence.reasons
+
+
+def test_hybrid_retriever_evidence_order_is_deterministic(
+    tmp_path: Path,
+) -> None:
+    """Equal scores should use a stable, human-readable title tie-breaker."""
+    vault_path = tmp_path / "vault"
+    create_note(title="Alpha Note", vault_path=vault_path)
+    create_note(title="Beta Note", vault_path=vault_path)
+    note_service, _ = _services(vault_path)
+    notes = note_service.list_notes()
+    retriever = HybridRetriever(
+        note_service=note_service,
+        semantic_retriever=FakeSemanticRetriever(
+            [
+                SemanticMatch(note=notes[0], score=0.5),
+                SemanticMatch(note=notes[1], score=0.5),
+            ]
+        ),
+    )
+
+    first = retriever.search_with_evidence("anything", limit=2)
+    second = retriever.search_with_evidence("anything", limit=2)
+
+    assert [item.note.title for item in first] == ["Alpha Note", "Beta Note"]
+    assert [item.note.title for item in first] == [item.note.title for item in second]
+
+
+def test_hybrid_retriever_evidence_excludes_zero_signal_notes(tmp_path: Path) -> None:
+    """Explainable retrieval must preserve the existing zero-signal filter."""
+    vault_path = tmp_path / "vault"
+    create_note(title="Relevant Note", vault_path=vault_path)
+    create_note(title="Unrelated Note", vault_path=vault_path)
+    note_service, _ = _services(vault_path)
+    notes = note_service.list_notes()
+    retriever = HybridRetriever(
+        note_service=note_service,
+        semantic_retriever=FakeSemanticRetriever(
+            [SemanticMatch(note=notes[0], score=0.9)]
+        ),
+    )
+
+    evidence = retriever.search_with_evidence("topic", limit=8)
+
+    assert [item.note.title for item in evidence] == ["Relevant Note"]
+
+
 def test_context_builder_respects_total_character_limit(tmp_path: Path) -> None:
     """Context construction must remain bounded for LLM prompt safety."""
     vault_path = tmp_path / "vault"
