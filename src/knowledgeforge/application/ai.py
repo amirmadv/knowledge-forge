@@ -20,6 +20,7 @@ class AIAnswer:
     """Result returned by an AI application use case."""
 
     answer: str
+    sources: tuple[str, ...] = ()
 
 
 class KnowledgeAgent:
@@ -88,7 +89,8 @@ class KnowledgeAgent:
                     "You are the KnowledgeForge personal knowledge agent. "
                     "Prefer the user's local knowledge over generic assumptions."
                 ),
-            )
+            ),
+            sources=tuple(note.title for note in notes),
         )
 
     def inspect_graph(self, title: str, depth: int = 1) -> NoteGraph:
