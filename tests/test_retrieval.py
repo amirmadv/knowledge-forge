@@ -154,9 +154,9 @@ def test_context_builder_returns_stable_source_references(tmp_path: Path) -> Non
 
     context, sources = builder.build_with_sources(note_service.list_notes())
 
-    assert "[S1] # Note: Linear Regression" in context
-    assert "[S2] # Note: Gradient Descent" in context
+    assert "[S1] # Note: Gradient Descent" in context
+    assert "[S2] # Note: Linear Regression" in context
     assert [(source.marker, source.title) for source in sources] == [
-        ("S1", "Linear Regression"),
-        ("S2", "Gradient Descent"),
+        ("S1", "Gradient Descent"),
+        ("S2", "Linear Regression"),
     ]
