@@ -72,6 +72,16 @@ class KnowledgeAgent:
             client=self._client,
         )
 
+    @property
+    def note_service(self) -> NoteService:
+        """Expose the configured note service to cooperating use cases."""
+        return self._note_service
+
+    @property
+    def client(self) -> OpenAICompatibleClient:
+        """Expose the configured AI client to cooperating use cases."""
+        return self._client
+
     def ask(
         self,
         question: str,
