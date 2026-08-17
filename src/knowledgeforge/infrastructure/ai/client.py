@@ -11,7 +11,7 @@ class AIClientError(RuntimeError):
 
 
 class OpenAICompatibleClient:
-    """Small standard-library client for OpenAI-compatible chat APIs."""
+    """Small standard-library client for chat and embedding APIs."""
 
     def __init__(
         self,
@@ -19,11 +19,13 @@ class OpenAICompatibleClient:
         api_key: str,
         model: str,
         timeout: float = 60.0,
+        embedding_model: str = "text-embedding-3-small",
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._model = model
         self._timeout = timeout
+        self._embedding_model = embedding_model
 
     def chat(self, prompt: str, system: str | None = None) -> str:
         """Send one chat request and return the assistant text."""
@@ -35,13 +37,49 @@ class OpenAICompatibleClient:
             messages.append({"role": "system", "content": system.strip()})
         messages.append({"role": "user", "content": prompt.strip()})
 
-        payload = json.dumps(
+        data = self._post(
+            "/chat/completions",
             {"model": self._model, "messages": messages},
-        ).encode("utf-8")
+        )
 
+        try:
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise AIClientError("AI provider returned an invalid response.") from exc
+
+        if not isinstance(content, str) or not content.strip():
+            raise AIClientError("AI provider returned empty content.")
+
+        return content.strip()
+
+    def embed(self, text: str) -> tuple[float, ...]:
+        """Create an embedding vector for semantic retrieval."""
+        if not text.strip():
+            raise AIClientError("Text to embed cannot be empty.")
+
+        data = self._post(
+            "/embeddings",
+            {"model": self._embedding_model, "input": text.strip()},
+        )
+
+        try:
+            vector = data["data"][0]["embedding"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise AIClientError("AI provider returned an invalid embedding response.") from exc
+
+        if not isinstance(vector, list) or not all(
+            isinstance(value, (int, float)) for value in vector
+        ):
+            raise AIClientError("AI provider returned an invalid embedding vector.")
+
+        return tuple(float(value) for value in vector)
+
+    def _post(self, path: str, payload: dict[str, object]) -> dict[str, object]:
+        """POST JSON to an OpenAI-compatible endpoint."""
+        body = json.dumps(payload).encode("utf-8")
         req = request.Request(
-            f"{self._base_url}/chat/completions",
-            data=payload,
+            f"{self._base_url}{path}",
+            data=body,
             headers={
                 "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
@@ -57,11 +95,10 @@ class OpenAICompatibleClient:
 
         try:
             data = json.loads(raw)
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            raise AIClientError("AI provider returned an invalid response.") from exc
+        except json.JSONDecodeError as exc:
+            raise AIClientError("AI provider returned invalid JSON.") from exc
 
-        if not isinstance(content, str) or not content.strip():
-            raise AIClientError("AI provider returned empty content.")
+        if not isinstance(data, dict):
+            raise AIClientError("AI provider returned an invalid response.")
 
-        return content.strip()
+        return data
