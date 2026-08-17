@@ -9,7 +9,6 @@ from typing import Any
 
 from knowledgeforge.application.agent_runtime import (
     AgentModelResponse,
-    AgentPlanner,
     AgentRuntime,
     AgentRuntimeError,
     AgentToolCall,
@@ -182,7 +181,7 @@ def evaluate_agent_cases(
         except Exception as exc:
             failures.append(str(exc))
             result = None
-        
+
         if result is not None:
             answer = result.answer
             termination_reason = result.trace.termination_reason
@@ -213,7 +212,8 @@ def evaluate_agent_cases(
             for expected in case.expected_answer_contains:
                 if expected.casefold() not in normalized_answer:
                     failures.append(
-                        f"Answer does not contain expected text: {expected!r}."
+                        "Answer does not contain expected text: "
+                        f"{expected!r}."
                     )
 
             missing_tools = [
@@ -260,7 +260,9 @@ def load_agent_evaluation_cases(path: Path) -> list[AgentEvaluationCase]:
         raw_cases = payload
 
     if not isinstance(raw_cases, list) or not raw_cases:
-        raise ValueError("Agent evaluation dataset must contain a non-empty cases list.")
+        raise ValueError(
+            "Agent evaluation dataset must contain a non-empty cases list."
+        )
 
     return [_parse_case(item) for item in raw_cases]
 
@@ -278,7 +280,9 @@ def _parse_case(item: Any) -> AgentEvaluationCase:
         case_id=_required_string(item, "id"),
         prompt=_required_string(item, "prompt"),
         responses=responses,
-        expected_answer_contains=_string_tuple(item.get("expected_answer_contains", [])),
+        expected_answer_contains=_string_tuple(
+            item.get("expected_answer_contains", [])
+        ),
         required_tools=_string_tuple(item.get("required_tools", [])),
         max_tool_calls=_optional_non_negative_int(item.get("max_tool_calls")),
     )
