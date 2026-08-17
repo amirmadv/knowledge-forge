@@ -15,6 +15,7 @@ before asking an OpenAI-compatible model for an answer.
 - Graph-aware AI agent with local-first RAG retrieval
 - Semantic embedding retrieval with lexical fallback
 - Persistent, incremental semantic embedding index
+- Explainable hybrid retrieval with semantic, lexical, and metadata score breakdowns
 - Bounded conversational memory for follow-up AI questions
 - Grounded source-note reporting for every AI answer
 - OpenAI-compatible chat and embedding client
@@ -80,6 +81,22 @@ Then ask the agent:
 knowledgeforge-ai ask "How does linear regression relate to gradient descent?"
 ```
 
+Search the vault directly:
+
+```powershell
+knowledgeforge-ai search "gradient descent"
+```
+
+Inspect why notes were ranked:
+
+```powershell
+knowledgeforge-ai search "gradient descent" --explain
+```
+
+The explain mode reports the final score, semantic/lexical/metadata signals, and
+human-readable reasons for each ranked note. The ranking logic remains in the application
+retrieval layer; the CLI only renders the evidence.
+
 For a multi-turn session with short-term conversational memory:
 
 ```powershell
@@ -106,11 +123,10 @@ To explicitly rebuild the complete index:
 knowledgeforge-ai index
 ```
 
-The agent retrieves knowledge in this order: exact local matches first, then semantic
-embedding similarity when the provider supports embeddings, then keyword matches. The
-selected notes are expanded through the knowledge graph before the final prompt is sent
-to the chat model. If embeddings are unavailable, KnowledgeForge automatically falls
-back to lexical retrieval so the core agent remains usable.
+The agent retrieves knowledge using hybrid semantic, lexical, and metadata signals, then
+expands selected notes through the knowledge graph before the final prompt is sent to the
+chat model. If embeddings are unavailable, KnowledgeForge automatically falls back to
+lexical retrieval so the core agent remains usable.
 
 The CLI prints the note titles used as grounded sources for each AI answer.
 
