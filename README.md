@@ -13,12 +13,13 @@ before asking an OpenAI-compatible model for an answer.
 - Note metadata, tags, templates, and search
 - Directed knowledge graph with ancestors, descendants, backlinks, and neighborhoods
 - Graph-aware AI agent with local-first RAG retrieval
+- Semantic embedding retrieval with lexical fallback
 - Bounded conversational memory for follow-up AI questions
 - Grounded source-note reporting for every AI answer
-- OpenAI-compatible provider client
+- OpenAI-compatible chat and embedding client
 - CLI for normal KnowledgeForge operations and AI questions
 - Interactive `knowledgeforge-ai chat` mode
-- 104 automated tests currently passing on the development environment
+- 106 automated tests currently passing on the development environment
 
 ## Requirements
 
@@ -58,15 +59,18 @@ KNOWLEDGEFORGE_AI_ENABLED=true
 KNOWLEDGEFORGE_AI_BASE_URL=https://api.openai.com/v1
 KNOWLEDGEFORGE_AI_API_KEY=your-api-key
 KNOWLEDGEFORGE_AI_MODEL=gpt-4o-mini
+KNOWLEDGEFORGE_AI_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
-For a local Ollama server using its OpenAI-compatible endpoint:
+For a local Ollama server using its OpenAI-compatible endpoint, use an embedding-capable
+model such as `nomic-embed-text` alongside your chat model:
 
 ```text
 KNOWLEDGEFORGE_AI_ENABLED=true
 KNOWLEDGEFORGE_AI_BASE_URL=http://localhost:11434/v1
 KNOWLEDGEFORGE_AI_API_KEY=ollama
 KNOWLEDGEFORGE_AI_MODEL=qwen3:4b
+KNOWLEDGEFORGE_AI_EMBEDDING_MODEL=nomic-embed-text
 ```
 
 Then ask the agent:
@@ -83,10 +87,11 @@ knowledgeforge-ai chat
 
 Inside chat, use `/clear` to reset conversation memory and `/exit` to leave.
 
-The agent first searches the local vault. If a full-question match is not found,
-it falls back to meaningful query terms and then expands matching notes through
-the knowledge graph. Follow-up questions can also use the recent conversation to
-resolve references, while the vault remains the source of truth.
+The agent retrieves knowledge in this order: exact local matches first, then semantic
+embedding similarity when the provider supports embeddings, then keyword matches. The
+selected notes are expanded through the knowledge graph before the final prompt is sent
+to the chat model. If embeddings are unavailable, KnowledgeForge automatically falls back
+to lexical retrieval so the core agent remains usable.
 
 The CLI prints the note titles used as grounded sources for each answer.
 
