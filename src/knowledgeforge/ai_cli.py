@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -60,6 +61,42 @@ def _print_retrieval_evidence(evidence: list[RetrievalEvidence]) -> None:
         if item.reasons:
             typer.echo(f"   reasons: {', '.join(item.reasons)}")
         typer.echo()
+
+
+def _evaluation_payload(dataset: Path, report, k: int) -> dict[str, object]:
+    """Build a stable JSON-serializable retrieval evaluation payload."""
+    result = report.result
+    gate = report.quality_gate
+    return {
+        "dataset": str(dataset),
+        "k": k,
+        "queries_evaluated": result.queries_evaluated,
+        "metrics": {
+            "precision_at_k": result.precision_at_k,
+            "recall_at_k": result.recall_at_k,
+            "mrr": result.mrr,
+        },
+        "thresholds": {
+            "min_precision_at_k": report.min_precision_at_k,
+            "min_recall_at_k": report.min_recall_at_k,
+            "min_mrr": report.min_mrr,
+        },
+        "quality_gate": {
+            "passed": gate.passed,
+            "failures": list(gate.failures),
+        },
+        "cases": [
+            {
+                "query": item.query,
+                "relevant": sorted(item.relevant),
+                "retrieved": list(item.retrieved),
+                "precision_at_k": item.precision_at_k,
+                "recall_at_k": item.recall_at_k,
+                "reciprocal_rank": item.reciprocal_rank,
+            }
+            for item in report.items
+        ],
+    }
 
 
 @app.command("ask")
@@ -167,8 +204,20 @@ def evaluate(
             help="Return a non-zero exit code when the quality gate fails.",
         ),
     ] = True,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            help="Output format: text or json.",
+        ),
+    ] = "text",
 ) -> None:
     """Evaluate hybrid retrieval against an offline gold dataset."""
+    output = output.casefold()
+    if output not in {"text", "json"}:
+        typer.echo("Output format must be 'text' or 'json'.", err=True)
+        raise typer.Exit(code=1)
+
     try:
         cases = load_retrieval_evaluation_cases(dataset)
         agent = _agent()
@@ -191,31 +240,34 @@ def evaluate(
     result = report.result
     gate = report.quality_gate
 
-    typer.echo("KnowledgeForge Retrieval Evaluation")
-    typer.echo(f"Dataset: {dataset}")
-    typer.echo(f"Queries: {result.queries_evaluated}")
-    typer.echo(f"Precision@{k}: {result.precision_at_k:.4f}")
-    typer.echo(f"Recall@{k}: {result.recall_at_k:.4f}")
-    typer.echo(f"MRR: {result.mrr:.4f}")
-    typer.echo(
-        "Quality gate: "
-        f"{'PASSED' if gate.passed else 'FAILED'}"
-    )
+    if output == "json":
+        typer.echo(json.dumps(_evaluation_payload(dataset, report, k), indent=2, sort_keys=True))
+    else:
+        typer.echo("KnowledgeForge Retrieval Evaluation")
+        typer.echo(f"Dataset: {dataset}")
+        typer.echo(f"Queries: {result.queries_evaluated}")
+        typer.echo(f"Precision@{k}: {result.precision_at_k:.4f}")
+        typer.echo(f"Recall@{k}: {result.recall_at_k:.4f}")
+        typer.echo(f"MRR: {result.mrr:.4f}")
+        typer.echo(
+            "Quality gate: "
+            f"{'PASSED' if gate.passed else 'FAILED'}"
+        )
 
-    if gate.failures:
-        typer.echo("Failures:")
-        for failure in gate.failures:
-            typer.echo(f"- {failure}")
+        if gate.failures:
+            typer.echo("Failures:")
+            for failure in gate.failures:
+                typer.echo(f"- {failure}")
 
-    if details:
-        typer.echo("\nCases:")
-        for index, item in enumerate(report.items, start=1):
-            retrieved = ", ".join(item.retrieved) or "(none)"
-            typer.echo(f"\n{index}. {item.query}")
-            typer.echo(f"   precision@{k}: {item.precision_at_k:.4f}")
-            typer.echo(f"   recall@{k}: {item.recall_at_k:.4f}")
-            typer.echo(f"   reciprocal rank: {item.reciprocal_rank:.4f}")
-            typer.echo(f"   retrieved: {retrieved}")
+        if details:
+            typer.echo("\nCases:")
+            for index, item in enumerate(report.items, start=1):
+                retrieved = ", ".join(item.retrieved) or "(none)"
+                typer.echo(f"\n{index}. {item.query}")
+                typer.echo(f"   precision@{k}: {item.precision_at_k:.4f}")
+                typer.echo(f"   recall@{k}: {item.recall_at_k:.4f}")
+                typer.echo(f"   reciprocal rank: {item.reciprocal_rank:.4f}")
+                typer.echo(f"   retrieved: {retrieved}")
 
     if fail_on_gate and not gate.passed:
         raise typer.Exit(code=2)
