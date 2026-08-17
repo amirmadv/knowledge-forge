@@ -14,6 +14,7 @@ from knowledgeforge.application.retrieval import (
     SourceRef,
 )
 from knowledgeforge.application.semantic import SemanticRetriever
+from knowledgeforge.application.tools import ToolAccess
 from knowledgeforge.domain.graph import GraphService, NoteGraph
 from knowledgeforge.domain.note import Note, NoteService
 from knowledgeforge.infrastructure.ai.agent_planner import OpenAICompatibleAgentPlanner
@@ -105,15 +106,26 @@ class KnowledgeAgent:
 
     @property
     def tools(self):
-        """Expose the provider-neutral core tool registry."""
+        """Expose the default read-only provider-neutral core tool registry."""
+        return self.tools_for_access(ToolAccess.READ_ONLY)
+
+    def tools_for_access(self, access: ToolAccess):
+        """Build the registry appropriate for an explicit agent access policy."""
         from knowledgeforge.application.tools import build_knowledge_tool_registry
 
-        return build_knowledge_tool_registry(self)
+        return build_knowledge_tool_registry(
+            self,
+            include_write_tools=access is ToolAccess.WRITE,
+        )
 
-    @property
-    def runtime(self) -> AgentRuntime:
-        """Expose a bounded provider-neutral runtime over the core tools."""
-        return AgentRuntime(self.tools)
+    def runtime(self, access: ToolAccess = ToolAccess.READ_ONLY) -> AgentRuntime:
+        """Build a bounded runtime with an explicit tool access policy."""
+        from knowledgeforge.application.agent_runtime import AgentRuntimeConfig
+
+        return AgentRuntime(
+            self.tools_for_access(access),
+            AgentRuntimeConfig(tool_access=access),
+        )
 
     @property
     def planner(self) -> OpenAICompatibleAgentPlanner:
@@ -123,9 +135,13 @@ class KnowledgeAgent:
             system_prompt=self.AGENT_SYSTEM_PROMPT,
         )
 
-    def run_agent(self, prompt: str) -> AgentRunResult:
-        """Run the bounded tool-using agent through the configured provider."""
-        return self.runtime.run(prompt, self.planner)
+    def run_agent(
+        self,
+        prompt: str,
+        access: ToolAccess = ToolAccess.READ_ONLY,
+    ) -> AgentRunResult:
+        """Run the bounded tool-using agent under an explicit access policy."""
+        return self.runtime(access).run(prompt, self.planner)
 
     def ask(
         self,
