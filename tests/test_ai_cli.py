@@ -1,5 +1,6 @@
 """Tests for the KnowledgeForge AI CLI."""
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -119,19 +120,34 @@ class _FakeEvaluationAgent:
         return [_FakeEvidence(slug) for slug in results.get(query, [])[:limit]]
 
 
+def _write_evaluation_dataset(path: Path, relevant: str = "linear-regression") -> None:
+    """Write a small deterministic dataset shared by CLI evaluation tests."""
+    path.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "query": "linear regression",
+                        "relevant": [relevant],
+                    },
+                    {
+                        "query": "gradient descent",
+                        "relevant": ["gradient-descent"],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_evaluate_command_reports_metrics_and_passes_gate(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     """The evaluate command should report aggregate metrics and a passing gate."""
     dataset = tmp_path / "retrieval.json"
-    dataset.write_text(
-        '{"cases": ['
-        '{"query": "linear regression", "relevant": ["linear-regression"]},'
-        '{"query": "gradient descent", "relevant": ["gradient-descent"]}'
-        ']}',
-        encoding="utf-8",
-    )
+    _write_evaluation_dataset(dataset)
     monkeypatch.setattr(
         "knowledgeforge.ai_cli._agent",
         lambda: _FakeEvaluationAgent(),
@@ -225,3 +241,64 @@ def test_evaluate_command_can_report_failed_gate_without_failing_process(
     assert "Quality gate: FAILED" in result.stdout
     assert "Cases:" in result.stdout
     assert "retrieved: linear-regression, machine-learning" in result.stdout
+
+
+def test_evaluate_command_supports_json_output(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The evaluate command should emit stable machine-readable JSON."""
+    dataset = tmp_path / "retrieval.json"
+    _write_evaluation_dataset(dataset)
+    monkeypatch.setattr(
+        "knowledgeforge.ai_cli._agent",
+        lambda: _FakeEvaluationAgent(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "evaluate",
+            str(dataset),
+            "--k",
+            "2",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["k"] == 2
+    assert payload["queries_evaluated"] == 2
+    assert payload["metrics"] == {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr": 0.75,
+    }
+    assert payload["quality_gate"] == {"passed": True, "failures": []}
+    assert payload["cases"][0]["retrieved"] == [
+        "linear-regression",
+        "machine-learning",
+    ]
+
+
+def test_evaluate_command_rejects_unknown_output_format(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The evaluate command should reject unsupported output formats."""
+    dataset = tmp_path / "retrieval.json"
+    _write_evaluation_dataset(dataset)
+    monkeypatch.setattr(
+        "knowledgeforge.ai_cli._agent",
+        lambda: _FakeEvaluationAgent(),
+    )
+
+    result = runner.invoke(
+        app,
+        ["evaluate", str(dataset), "--output", "yaml"],
+    )
+
+    assert result.exit_code == 1
+    assert "Output format must be 'text' or 'json'." in result.stderr
