@@ -13,9 +13,10 @@ before asking an OpenAI-compatible model for an answer.
 - Note metadata, tags, templates, and search
 - Directed knowledge graph with ancestors, descendants, backlinks, and neighborhoods
 - Graph-aware AI agent with local-first RAG retrieval
+- Grounded source-note reporting for every AI answer
 - OpenAI-compatible provider client
 - CLI for normal KnowledgeForge operations and AI questions
-- 99 automated tests currently passing on the development environment
+- 101 automated tests currently passing on the development environment
 
 ## Requirements
 
@@ -75,6 +76,8 @@ knowledgeforge-ai ask "How does linear regression relate to gradient descent?"
 The agent first searches the local vault. If a full-question match is not found,
 it falls back to meaningful query terms and then expands matching notes through
 the knowledge graph. This keeps the AI grounded in the user's own knowledge.
+
+The CLI also prints the note titles used as grounded sources for the answer.
 
 ## Development checks
 
