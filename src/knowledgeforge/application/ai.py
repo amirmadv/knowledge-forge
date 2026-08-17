@@ -9,6 +9,7 @@ from pathlib import Path
 from knowledgeforge.application.retrieval import (
     ContextBuilder,
     HybridRetriever,
+    RetrievalEvidence,
     SourceRef,
 )
 from knowledgeforge.application.semantic import SemanticRetriever
@@ -135,6 +136,14 @@ class KnowledgeAgent:
             ),
             sources=tuple(note.title for note in notes),
         )
+
+    def search_with_evidence(
+        self,
+        query: str,
+        limit: int = 8,
+    ) -> list[RetrievalEvidence]:
+        """Search the vault and expose explainable retrieval evidence."""
+        return self._retriever.search_with_evidence(query, limit=limit)
 
     def inspect_graph(self, title: str, depth: int = 1) -> NoteGraph:
         """Inspect the graph neighborhood of a note."""
