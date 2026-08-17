@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from urllib import error, request
 
 
@@ -37,15 +38,12 @@ class OpenAICompatibleClient:
         if not prompt.strip():
             raise AIClientError("Prompt cannot be empty.")
 
-        messages: list[dict[str, str]] = []
+        messages: list[dict[str, Any]] = []
         if system and system.strip():
             messages.append({"role": "system", "content": system.strip()})
         messages.append({"role": "user", "content": prompt.strip()})
 
-        data = self._post(
-            "/chat/completions",
-            {"model": self._model, "messages": messages},
-        )
+        data = self.chat_completion(messages)
 
         try:
             content = data["choices"][0]["message"]["content"]
@@ -56,6 +54,26 @@ class OpenAICompatibleClient:
             raise AIClientError("AI provider returned empty content.")
 
         return content.strip()
+
+    def chat_completion(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Send a generic OpenAI-compatible chat completion request."""
+        if not messages:
+            raise AIClientError("Chat completion requires at least one message.")
+
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+        return self._post("/chat/completions", payload)
 
     def embed(self, text: str) -> tuple[float, ...]:
         """Create an embedding vector for semantic retrieval."""
@@ -79,7 +97,7 @@ class OpenAICompatibleClient:
 
         return tuple(float(value) for value in vector)
 
-    def _post(self, path: str, payload: dict[str, object]) -> dict[str, object]:
+    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         """POST JSON to an OpenAI-compatible endpoint."""
         body = json.dumps(payload).encode("utf-8")
         req = request.Request(
