@@ -7,6 +7,7 @@ import typer
 from knowledgeforge.application.ai import KnowledgeAgent
 from knowledgeforge.application.chat import KnowledgeChatSession
 from knowledgeforge.application.copilot import KnowledgeCopilot
+from knowledgeforge.application.retrieval import RetrievalEvidence
 from knowledgeforge.infrastructure.config.settings import Settings
 
 app = typer.Typer(
@@ -37,6 +38,23 @@ def _print_answer(answer: str, sources: tuple[str, ...]) -> None:
             typer.echo(f"- {source}")
 
 
+def _print_retrieval_evidence(evidence: list[RetrievalEvidence]) -> None:
+    """Print deterministic, human-readable retrieval evidence."""
+    if not evidence:
+        typer.echo("No matching notes found.")
+        return
+
+    for rank, item in enumerate(evidence, start=1):
+        typer.echo(f"{rank}. {item.note.title}")
+        typer.echo(f"   score: {item.score:.3f}")
+        typer.echo(f"   semantic: {item.semantic_score:.3f}")
+        typer.echo(f"   lexical: {item.lexical_score:.3f}")
+        typer.echo(f"   metadata: {item.metadata_score:.3f}")
+        if item.reasons:
+            typer.echo(f"   reasons: {', '.join(item.reasons)}")
+        typer.echo()
+
+
 @app.command("ask")
 def ask(question: str) -> None:
     """Ask the AI agent a question using local vault context."""
@@ -47,6 +65,36 @@ def ask(question: str) -> None:
         raise typer.Exit(code=1) from exc
 
     _print_answer(result.answer, result.sources)
+
+
+@app.command("search")
+def search(
+    query: str,
+    limit: int = typer.Option(8, min=1, max=50, help="Maximum number of results."),
+    explain: bool = typer.Option(
+        False,
+        "--explain",
+        help="Show score contributions and retrieval reasons.",
+    ),
+) -> None:
+    """Search the local vault and optionally explain the ranking."""
+    try:
+        evidence = _agent().search_with_evidence(query, limit=limit)
+    except Exception as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Search results for: {query}")
+    if explain:
+        _print_retrieval_evidence(evidence)
+        return
+
+    if not evidence:
+        typer.echo("No matching notes found.")
+        return
+
+    for rank, item in enumerate(evidence, start=1):
+        typer.echo(f"{rank}. {item.note.title} ({item.score:.3f})")
 
 
 @app.command("chat")
