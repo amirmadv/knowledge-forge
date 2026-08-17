@@ -19,7 +19,7 @@ before asking an OpenAI-compatible model for an answer.
 - OpenAI-compatible chat and embedding client
 - CLI for normal KnowledgeForge operations and AI questions
 - Interactive `knowledgeforge-ai chat` mode
-- 106 automated tests currently passing on the development environment
+- 105 automated tests currently passing on the development environment
 
 ## Requirements
 
