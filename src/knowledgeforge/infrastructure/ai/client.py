@@ -27,6 +27,11 @@ class OpenAICompatibleClient:
         self._timeout = timeout
         self._embedding_model = embedding_model
 
+    @property
+    def embedding_model(self) -> str:
+        """Return the configured embedding model name."""
+        return self._embedding_model
+
     def chat(self, prompt: str, system: str | None = None) -> str:
         """Send one chat request and return the assistant text."""
         if not prompt.strip():

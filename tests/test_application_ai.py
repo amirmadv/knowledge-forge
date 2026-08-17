@@ -60,10 +60,12 @@ def test_agent_uses_note_content_and_graph_context(tmp_path: Path) -> None:
 
     assert result.answer == "mock answer"
     assert result.sources == ("Linear Regression", "Gradient Descent")
-    assert "# Note: Linear Regression" in client.prompt
-    assert "Linear Regression" in client.prompt
-    assert "Gradient Descent" in client.prompt
+    assert "[S1] # Note: Linear Regression" in client.prompt
+    assert "[S2] # Note: Gradient Descent" in client.prompt
+    assert "[S1] Linear Regression" in client.prompt
+    assert "[S2] Gradient Descent" in client.prompt
     assert "prerequisite" in client.prompt
+    assert "Cite factual claims with source markers such as [S1]." in client.prompt
     assert "KnowledgeForge personal knowledge agent" in client.system
 
 

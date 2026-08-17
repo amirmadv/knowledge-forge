@@ -6,6 +6,11 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from knowledgeforge.application.retrieval import (
+    ContextBuilder,
+    HybridRetriever,
+    SourceRef,
+)
 from knowledgeforge.application.semantic import SemanticRetriever
 from knowledgeforge.domain.graph import GraphService, NoteGraph
 from knowledgeforge.domain.note import Note, NoteService
@@ -25,21 +30,13 @@ class AIAnswer:
 
 
 class KnowledgeAgent:
-    """Graph-aware AI agent for the local KnowledgeForge vault.
-
-    Retrieval is local-first: exact and keyword matches are combined with
-    optional semantic embeddings, then graph neighbors are added before the
-    provider is called. If embeddings are unavailable, lexical retrieval still
-    keeps the agent fully usable.
-    """
+    """Graph-aware AI agent for the local KnowledgeForge vault."""
 
     MAX_CONTEXT_NOTES = 8
     GRAPH_DEPTH = 1
     MAX_QUERY_TERMS = 8
     MIN_QUERY_TERM_LENGTH = 3
     MAX_HISTORY_TURNS = 8
-    SEMANTIC_LIMIT = 5
-    SEMANTIC_MIN_SCORE = 0.20
 
     def __init__(
         self,
@@ -71,6 +68,16 @@ class KnowledgeAgent:
             note_service=self._note_service,
             client=self._client,
         )
+        self._retriever = HybridRetriever(
+            note_service=self._note_service,
+            semantic_retriever=self._semantic_retriever,
+        )
+        self._context_builder = ContextBuilder(
+            note_service=self._note_service,
+            graph_service=self._graph_service,
+            max_notes=self.MAX_CONTEXT_NOTES,
+            graph_depth=self.GRAPH_DEPTH,
+        )
 
     @property
     def note_service(self) -> NoteService:
@@ -87,14 +94,15 @@ class KnowledgeAgent:
         question: str,
         history: tuple[tuple[str, str], ...] = (),
     ) -> AIAnswer:
-        """Answer a question using notes, graph context, and optional history."""
+        """Answer a question using hybrid retrieval and grounded context."""
         normalized_question = question.strip()
         if not normalized_question:
             raise ValueError("Question cannot be empty.")
 
         notes = self._retrieve_context_notes(normalized_question)
-        context = self._build_context(notes)
+        context, source_refs = self._context_builder.build_with_sources(notes)
         conversation = self._build_history(history)
+        source_instructions = self._build_source_instructions(source_refs)
 
         prompt = (
             "Answer the user's question using the supplied KnowledgeForge "
@@ -102,6 +110,13 @@ class KnowledgeAgent:
             "and graph relationships from the user's vault. Do not invent "
             "facts that are not supported by the context. If the context is "
             "insufficient, state what is missing clearly.\n\n"
+            "Grounding rules:\n"
+            "- Treat the supplied vault context as the source of truth.\n"
+            "- Cite factual claims with source markers such as [S1].\n"
+            "- Use only source markers that exist in the context.\n"
+            "- Do not fabricate citations or source titles.\n"
+            "- When sources disagree, explicitly identify the conflict.\n\n"
+            f"Available sources:\n{source_instructions}\n\n"
             f"Conversation history:\n{conversation}\n\n"
             f"Question:\n{normalized_question}\n\n"
             f"Knowledge context:\n{context or '(no matching notes)'}"
@@ -114,7 +129,8 @@ class KnowledgeAgent:
                     "You are the KnowledgeForge personal knowledge agent. "
                     "Prefer the user's local knowledge over generic assumptions. "
                     "Use conversation history only to resolve references and "
-                    "maintain continuity; the vault remains the source of truth."
+                    "maintain continuity; the vault remains the source of truth. "
+                    "Ground factual claims in the supplied source markers."
                 ),
             ),
             sources=tuple(note.title for note in notes),
@@ -124,82 +140,62 @@ class KnowledgeAgent:
         """Inspect the graph neighborhood of a note."""
         return self._graph_service.graph(title, depth=depth)
 
+    def rebuild_semantic_index(self) -> int:
+        """Rebuild the persisted semantic index for the local vault."""
+        return self._semantic_retriever.rebuild()
+
     def _retrieve_context_notes(self, question: str) -> list[Note]:
-        """Retrieve ranked matches and expand them through the note graph."""
-        seeds = self._search_question(question)
-        if not seeds:
+        """Retrieve hybrid matches and expand them through the note graph."""
+        matches = self._retriever.search(
+            question,
+            limit=self.MAX_CONTEXT_NOTES,
+        )
+        if not matches:
             return []
 
         all_notes = self._note_service.list_notes()
-        notes_by_slug = {note.path.stem: note for note in all_notes}
-        selected: dict[str, Note] = {}
+        notes_by_slug = {note.slug: note for note in all_notes}
+        selected: dict[str, Note] = {
+            match.note.slug: match.note for match in matches
+        }
 
-        for note in seeds:
-            selected[note.path.stem] = note
-
+        for match in matches:
             graph = self._graph_service.graph(
-                note.title,
+                match.note.title,
                 depth=self.GRAPH_DEPTH,
             )
-
             for node in graph.nodes:
                 neighbor = notes_by_slug.get(node.slug)
                 if neighbor is not None:
                     selected.setdefault(node.slug, neighbor)
-
                 if len(selected) >= self.MAX_CONTEXT_NOTES:
                     break
-
             if len(selected) >= self.MAX_CONTEXT_NOTES:
                 break
 
         return list(selected.values())[: self.MAX_CONTEXT_NOTES]
 
-    def _search_question(self, question: str) -> list[Note]:
-        """Use exact, semantic, and lexical retrieval in that order."""
-        exact_matches = self._note_service.search(question)
-        if exact_matches:
-            return exact_matches[: self.MAX_CONTEXT_NOTES]
-
-        matches: dict[str, Note] = {}
-
-        try:
-            semantic_matches = self._semantic_retriever.search(
-                question,
-                limit=self.SEMANTIC_LIMIT,
-            )
-        except AIClientError:
-            semantic_matches = []
-
-        for match in semantic_matches:
-            if match.score >= self.SEMANTIC_MIN_SCORE:
-                matches.setdefault(match.note.path.stem, match.note)
-
-        for term in self._query_terms(question):
-            for note in self._note_service.search(term):
-                matches.setdefault(note.path.stem, note)
-
-                if len(matches) >= self.MAX_CONTEXT_NOTES:
-                    return list(matches.values())
-
-        return list(matches.values())[: self.MAX_CONTEXT_NOTES]
+    @staticmethod
+    def _build_source_instructions(sources: tuple[SourceRef, ...]) -> str:
+        """Describe source markers without exposing implementation details."""
+        if not sources:
+            return "(none)"
+        return "\n".join(
+            f"[{source.marker}] {source.title}" for source in sources
+        )
 
     @classmethod
     def _query_terms(cls, question: str) -> list[str]:
-        """Extract bounded, meaningful search terms from a question."""
+        """Extract bounded, meaningful search terms for compatibility."""
         terms: list[str] = []
         seen: set[str] = set()
-
         for raw_term in re.findall(r"\w+", question.casefold(), flags=re.UNICODE):
             if len(raw_term) < cls.MIN_QUERY_TERM_LENGTH or raw_term in seen:
                 continue
-
             seen.add(raw_term)
             terms.append(raw_term)
-
             if len(terms) >= cls.MAX_QUERY_TERMS:
                 break
-
         return terms
 
     @classmethod
@@ -213,38 +209,3 @@ class KnowledgeAgent:
             f"User: {question.strip()}\nAssistant: {answer.strip()}"
             for question, answer in bounded_history
         )
-
-    def _build_context(self, notes: list[Note]) -> str:
-        """Build bounded textual context from notes and graph data."""
-        sections: list[str] = []
-        title_by_slug = {
-            note.path.stem: note.title
-            for note in self._note_service.list_notes()
-        }
-
-        for note in notes:
-            content = self._note_service.read_content(note.title)
-            graph = self._graph_service.graph(
-                note.title,
-                depth=self.GRAPH_DEPTH,
-            )
-            edges = "\n".join(
-                "- "
-                f"{title_by_slug.get(edge.source, edge.source)} "
-                f"--[{edge.relation_type.value}]--> "
-                f"{title_by_slug.get(edge.target, edge.target)}"
-                for edge in graph.edges
-            )
-            nodes = ", ".join(
-                title_by_slug.get(node.slug, node.slug)
-                for node in graph.nodes
-            )
-
-            sections.append(
-                f"# Note: {note.title}\n"
-                f"Content:\n{content}\n"
-                f"Graph nodes: {nodes or '(none)'}\n"
-                f"Graph edges:\n{edges or '(none)'}"
-            )
-
-        return "\n\n---\n\n".join(sections)
