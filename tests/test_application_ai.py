@@ -172,6 +172,31 @@ def test_agent_inspects_note_graph(tmp_path: Path) -> None:
     assert graph.edges[0].target == "b"
 
 
+def test_agent_search_exposes_retrieval_evidence(tmp_path: Path) -> None:
+    """Application search should expose explainable lexical evidence."""
+    vault_path = tmp_path / "vault"
+    create_note(title="Linear Regression", vault_path=vault_path)
+    update_note(
+        title="Linear Regression",
+        content="Linear regression predicts a target from input features.",
+        vault_path=vault_path,
+    )
+    create_note(title="Python", vault_path=vault_path)
+
+    agent = KnowledgeAgent(
+        settings=_settings(vault_path),
+        client=FakeAIClient(),
+    )
+
+    evidence = agent.search_with_evidence("linear regression", limit=2)
+
+    assert evidence
+    assert evidence[0].note.title == "Linear Regression"
+    assert evidence[0].lexical_score > 0
+    assert evidence[0].score > 0
+    assert evidence[0].reasons
+
+
 def test_agent_rejects_empty_question(tmp_path: Path) -> None:
     """Agent should reject an empty user question before provider calls."""
     agent = KnowledgeAgent(
@@ -184,4 +209,4 @@ def test_agent_rejects_empty_question(tmp_path: Path) -> None:
     except ValueError as exc:
         assert str(exc) == "Question cannot be empty."
     else:
-        raise AssertionError("Expected ValueError for an empty question.")
+        raise AssertionError("Expected ValueError")
