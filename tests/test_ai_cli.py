@@ -1,5 +1,6 @@
 """Tests for the KnowledgeForge AI CLI."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
@@ -97,3 +98,130 @@ def test_search_explain_handles_empty_results(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "No matching notes found." in result.stdout
+
+
+class _FakeNote:
+    def __init__(self, slug: str) -> None:
+        self.slug = slug
+
+
+class _FakeEvidence:
+    def __init__(self, slug: str) -> None:
+        self.note = _FakeNote(slug)
+
+
+class _FakeEvaluationAgent:
+    def search_with_evidence(self, query: str, limit: int = 8) -> list[_FakeEvidence]:
+        results = {
+            "linear regression": ["linear-regression", "machine-learning"],
+            "gradient descent": ["machine-learning", "gradient-descent"],
+        }
+        return [_FakeEvidence(slug) for slug in results.get(query, [])[:limit]]
+
+
+def test_evaluate_command_reports_metrics_and_passes_gate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The evaluate command should report aggregate metrics and a passing gate."""
+    dataset = tmp_path / "retrieval.json"
+    dataset.write_text(
+        '{"cases": ['
+        '{"query": "linear regression", "relevant": ["linear-regression"]},'
+        '{"query": "gradient descent", "relevant": ["gradient-descent"]}'
+        ']}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "knowledgeforge.ai_cli._agent",
+        lambda: _FakeEvaluationAgent(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "evaluate",
+            str(dataset),
+            "--k",
+            "2",
+            "--min-precision",
+            "0.5",
+            "--min-recall",
+            "1.0",
+            "--min-mrr",
+            "0.75",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "KnowledgeForge Retrieval Evaluation" in result.stdout
+    assert "Queries: 2" in result.stdout
+    assert "Precision@2: 0.5000" in result.stdout
+    assert "Recall@2: 1.0000" in result.stdout
+    assert "MRR: 0.7500" in result.stdout
+    assert "Quality gate: PASSED" in result.stdout
+
+
+def test_evaluate_command_fails_when_quality_gate_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The evaluate command should fail CI when the configured gate fails."""
+    dataset = tmp_path / "retrieval.json"
+    dataset.write_text(
+        '[{"query": "linear regression", "relevant": ["missing-note"]}]',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "knowledgeforge.ai_cli._agent",
+        lambda: _FakeEvaluationAgent(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "evaluate",
+            str(dataset),
+            "--k",
+            "1",
+            "--min-precision",
+            "1.0",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "Quality gate: FAILED" in result.stdout
+    assert "precision@1" in result.stdout
+
+
+def test_evaluate_command_can_report_failed_gate_without_failing_process(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The gate can be inspected without failing the calling process."""
+    dataset = tmp_path / "retrieval.json"
+    dataset.write_text(
+        '[{"query": "linear regression", "relevant": ["missing-note"]}]',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "knowledgeforge.ai_cli._agent",
+        lambda: _FakeEvaluationAgent(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "evaluate",
+            str(dataset),
+            "--min-precision",
+            "1.0",
+            "--no-fail-on-gate",
+            "--details",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Quality gate: FAILED" in result.stdout
+    assert "Cases:" in result.stdout
+    assert "retrieved: linear-regression, machine-learning" in result.stdout
