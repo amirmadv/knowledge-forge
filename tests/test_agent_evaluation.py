@@ -12,27 +12,39 @@ from knowledgeforge.application.agent_runtime import (
     AgentRuntime,
     AgentToolCall,
 )
-from knowledgeforge.application.tools import KnowledgeTool, KnowledgeToolRegistry, ToolResult
+from knowledgeforge.application.tools import (
+    KnowledgeToolRegistry,
+    ToolResult,
+    ToolSpec,
+)
 
 
-def _registry() -> KnowledgeToolRegistry:
-    registry = KnowledgeToolRegistry()
-    registry.register(
-        KnowledgeTool(
+class _FakeGetNoteTool:
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
             name="get_note",
             description="Read a note.",
-            parameters={
+            input_schema={
                 "type": "object",
                 "properties": {"title": {"type": "string"}},
                 "required": ["title"],
+                "additionalProperties": False,
             },
-            handler=lambda arguments: ToolResult(
-                tool_name="get_note",
-                data={"title": arguments["title"], "content": "A note about regression."},
-            ),
         )
-    )
-    return registry
+
+    def execute(self, arguments: dict[str, object]) -> ToolResult:
+        return ToolResult(
+            tool_name="get_note",
+            data={
+                "title": arguments["title"],
+                "content": "A note about regression.",
+            },
+        )
+
+
+def _registry() -> KnowledgeToolRegistry:
+    return KnowledgeToolRegistry((_FakeGetNoteTool(),))
 
 
 def test_evaluation_replays_real_runtime_and_reports_success() -> None:
