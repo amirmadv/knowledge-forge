@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     ai_base_url: str = "https://api.openai.com/v1"
     ai_api_key: str = ""
     ai_model: str = "gpt-4o-mini"
+    ai_embedding_model: str = "text-embedding-3-small"
     ai_timeout: float = 60.0
 
 
