@@ -230,9 +230,9 @@ def build_knowledge_tool_registry(agent: Any) -> KnowledgeToolRegistry:
     return KnowledgeToolRegistry(
         (
             SearchKnowledgeTool(agent.search_with_evidence),
-            InspectNoteGraphTool(agent._graph_service),
+            InspectNoteGraphTool(agent.graph_service),
             GetNoteTool(agent.note_service),
-            ListRelatedNotesTool(agent.note_service, agent._graph_service),
+            ListRelatedNotesTool(agent.note_service, agent.graph_service),
         )
     )
 
