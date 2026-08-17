@@ -24,6 +24,14 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+DATASET_ARGUMENT = typer.Argument(
+    ...,
+    exists=True,
+    dir_okay=False,
+    readable=True,
+    help="JSON retrieval evaluation dataset.",
+)
+
 
 def _agent() -> KnowledgeAgent:
     """Build the configured KnowledgeForge AI agent."""
@@ -148,16 +156,7 @@ def search(
 
 @app.command("evaluate")
 def evaluate(
-    dataset: Annotated[
-        Path,
-        typer.Argument(
-            ...,
-            exists=True,
-            dir_okay=False,
-            readable=True,
-            help="JSON retrieval evaluation dataset.",
-        ),
-    ],
+    dataset: Annotated[Path, DATASET_ARGUMENT],
     k: Annotated[
         int,
         typer.Option(
@@ -241,7 +240,13 @@ def evaluate(
     gate = report.quality_gate
 
     if output == "json":
-        typer.echo(json.dumps(_evaluation_payload(dataset, report, k), indent=2, sort_keys=True))
+        typer.echo(
+            json.dumps(
+                _evaluation_payload(dataset, report, k),
+                indent=2,
+                sort_keys=True,
+            )
+        )
     else:
         typer.echo("KnowledgeForge Retrieval Evaluation")
         typer.echo(f"Dataset: {dataset}")
