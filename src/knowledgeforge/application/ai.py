@@ -89,6 +89,10 @@ class KnowledgeAgent:
     def _build_context(self, notes: list[Note]) -> str:
         """Build bounded textual context from notes and graph data."""
         sections: list[str] = []
+        title_by_slug = {
+            note.path.stem: note.title
+            for note in self._note_service.list_notes()
+        }
 
         for note in notes:
             content = self._note_service.read_content(note.title)
@@ -97,10 +101,16 @@ class KnowledgeAgent:
                 depth=self.GRAPH_DEPTH,
             )
             edges = "\n".join(
-                f"- {edge.source} --[{edge.relation_type.value}]--> {edge.target}"
+                "- "
+                f"{title_by_slug.get(edge.source, edge.source)} "
+                f"--[{edge.relation_type.value}]--> "
+                f"{title_by_slug.get(edge.target, edge.target)}"
                 for edge in graph.edges
             )
-            nodes = ", ".join(node.slug for node in graph.nodes)
+            nodes = ", ".join(
+                title_by_slug.get(node.slug, node.slug)
+                for node in graph.nodes
+            )
 
             sections.append(
                 f"# Note: {note.title}\n"
