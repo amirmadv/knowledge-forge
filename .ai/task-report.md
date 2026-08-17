@@ -1,47 +1,28 @@
-# Task Report — KF-006 Grounded Retrieval
+# Task Report — KF-006 Retrieval Explainability
 
 ## Status
 
-Implemented the first production-oriented slice of KF-006 on `agent/persistent-semantic-index`.
+Implemented the retrieval-explainability slice on `agent/persistent-semantic-index`.
 
-## Specification
+## Delivered
 
-Strengthen the retrieval-to-agent boundary so that retrieved knowledge can be explicitly referenced by stable source markers in the LLM context.
+- Preserved the existing hybrid retrieval API.
+- Added immutable `RetrievalEvidence` at the application boundary.
+- Added `HybridRetriever.search_with_evidence()`.
+- Kept score weights centralized in `HybridRetriever`.
+- Exposed raw scores and weighted score contributions for semantic, lexical, and metadata signals.
+- Added deterministic, human-readable retrieval reasons.
+- Made tie-breaking deterministic with case-insensitive title ordering.
+- Preserved bounded context construction and stable `[S1]`, `[S2]`, ... source markers.
+- Added tests for score breakdown, reason generation, deterministic ordering, and zero-signal filtering.
 
-Requirements:
+## Architecture
 
-- Preserve the existing hybrid retrieval API.
-- Keep context size bounded.
-- Assign deterministic source markers to retrieved notes.
-- Include source titles in the prompt separately from note content.
-- Instruct the model to cite factual claims using only available source markers.
-- Preserve existing graph context and source-title behavior.
-
-## Implementation
-
-### `src/knowledgeforge/application/retrieval.py`
-
-- Added `SourceRef`.
-- Added `ContextBuilder.build_with_sources()`.
-- Preserved `ContextBuilder.build()` as a compatibility wrapper.
-- Added `[S1]`, `[S2]`, ... markers to note context sections.
-- Returned source metadata alongside rendered context.
-- Preserved character and note-count limits.
-
-### `src/knowledgeforge/application/ai.py`
-
-- `KnowledgeAgent.ask()` now consumes grounded context with source references.
-- Prompt explicitly requires source markers for factual claims.
-- Prompt prevents fabricated source markers/titles.
-- Prompt asks the model to identify conflicting sources.
-- Existing `AIAnswer.sources` contract remains unchanged.
-
-### Tests
-
-- Added retrieval source-reference coverage.
-- Extended agent tests to verify source markers and grounding instructions.
+The retrieval domain remains independent from LLM providers. `search()` remains compatible by converting explainable evidence back to `RetrievalMatch`.
 
 ## Validation
+
+The latest known baseline before this slice was 121 passing tests with clean Ruff output. The current execution environment does not contain the local repository checkout, so post-change Ruff/Pytest execution could not be performed here.
 
 Run locally after pulling the branch:
 
@@ -50,8 +31,6 @@ python -m uv run ruff check .
 python -m uv run pytest -vv
 ```
 
-Expected result: all checks pass.
-
 ## Next Step
 
-KF-006 next slice: make retrieval explainable at the application boundary by exposing ranking evidence (semantic, lexical, metadata, and graph expansion reasons) without coupling the domain layer to the LLM provider.
+Expose explainable retrieval through the AI CLI and introduce retrieval evaluation fixtures/metrics (`precision@k`, `recall@k`, `MRR`).
