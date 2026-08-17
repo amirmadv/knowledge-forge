@@ -12,7 +12,9 @@ from knowledgeforge.application.commands import (
 )
 from knowledgeforge.application.tools import (
     KnowledgeToolRegistry,
+    ToolAccess,
     ToolArgumentError,
+    ToolAuthorizationError,
     ToolNotFoundError,
 )
 from knowledgeforge.infrastructure.config.settings import Settings
@@ -52,12 +54,65 @@ def test_agent_exposes_stable_core_tool_specs(tmp_path: Path) -> None:
         "list_related_notes",
     ]
     assert all(spec.input_schema["type"] == "object" for spec in specs)
+    assert all(spec.access is ToolAccess.READ_ONLY for spec in specs)
     assert [item["function"]["name"] for item in agent.tools.provider_tools()] == [
         "search_knowledge",
         "inspect_note_graph",
         "get_note",
         "list_related_notes",
     ]
+
+
+def test_write_tool_is_only_exposed_under_explicit_write_policy(tmp_path: Path) -> None:
+    """Write capabilities should not be visible to a read-only planner."""
+    agent = _agent(tmp_path / "vault")
+
+    read_only = agent.tools_for_access(ToolAccess.READ_ONLY)
+    write_enabled = agent.tools_for_access(ToolAccess.WRITE)
+
+    assert "create_note" not in {
+        item["function"]["name"] for item in read_only.provider_tools()
+    }
+    assert "create_note" in {
+        item["function"]["name"] for item in write_enabled.provider_tools(ToolAccess.WRITE)
+    }
+    assert write_enabled.get("create_note").spec.access is ToolAccess.WRITE
+
+
+def test_read_only_policy_rejects_direct_write_execution(tmp_path: Path) -> None:
+    """Registry execution must enforce authorization even if a write tool is registered."""
+    agent = _agent(tmp_path / "vault")
+    registry = agent.tools_for_access(ToolAccess.WRITE)
+
+    with pytest.raises(ToolAuthorizationError, match="requires write authorization"):
+        registry.execute(
+            "create_note",
+            {"title": "Blocked", "content": "This must not be written."},
+            access=ToolAccess.READ_ONLY,
+        )
+
+    assert not (tmp_path / "vault" / "Blocked.md").exists()
+
+
+def test_write_policy_creates_note_through_controlled_tool(tmp_path: Path) -> None:
+    """Explicit write authorization should permit the first controlled mutation workflow."""
+    vault_path = tmp_path / "vault"
+    agent = _agent(vault_path)
+    registry = agent.tools_for_access(ToolAccess.WRITE)
+
+    result = registry.execute(
+        "create_note",
+        {
+            "title": "Agent Created Note",
+            "content": "Created by an explicitly write-authorized agent.",
+            "tags": ["agent", "controlled-write"],
+        },
+        access=ToolAccess.WRITE,
+    )
+
+    assert result.data["note"]["title"] == "Agent Created Note"
+    assert result.data["note"]["tags"] == ["agent", "controlled-write"]
+    assert "Created by an explicitly write-authorized agent." in result.data["note"]["content"]
 
 
 def test_search_tool_returns_explainable_results(tmp_path: Path) -> None:

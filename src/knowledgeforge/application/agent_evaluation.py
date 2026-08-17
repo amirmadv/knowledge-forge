@@ -254,10 +254,7 @@ def evaluate_agent_cases(
 def load_agent_evaluation_cases(path: Path) -> list[AgentEvaluationCase]:
     """Load deterministic agent evaluation cases from a JSON file."""
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if isinstance(payload, dict):
-        raw_cases = payload.get("cases")
-    else:
-        raw_cases = payload
+    raw_cases = payload.get("cases") if isinstance(payload, dict) else payload
 
     if not isinstance(raw_cases, list) or not raw_cases:
         raise ValueError(
