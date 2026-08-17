@@ -107,7 +107,9 @@ class KnowledgeAgent:
     @property
     def tools(self):
         """Expose the default read-only provider-neutral core tool registry."""
-        return self.tools_for_access(ToolAccess.READ_ONLY)
+        from knowledgeforge.application.tools import build_knowledge_tool_registry
+
+        return build_knowledge_tool_registry(self)
 
     def tools_for_access(self, access: ToolAccess):
         """Build the registry appropriate for an explicit agent access policy."""
@@ -115,7 +117,7 @@ class KnowledgeAgent:
 
         return build_knowledge_tool_registry(
             self,
-            include_write_tools=access is ToolAccess.WRITE,
+            include_write_tools=True,
         )
 
     def runtime(self, access: ToolAccess = ToolAccess.READ_ONLY) -> AgentRuntime:
