@@ -48,7 +48,7 @@ class ToolObservation:
     error: str | None = None
 
     @classmethod
-    def from_result(cls, call: AgentToolCall, result: ToolResult) -> "ToolObservation":
+    def from_result(cls, call: AgentToolCall, result: ToolResult) -> ToolObservation:
         return cls(
             call_id=call.call_id,
             tool_name=result.tool_name,
@@ -57,7 +57,7 @@ class ToolObservation:
         )
 
     @classmethod
-    def from_error(cls, call: AgentToolCall, error: Exception) -> "ToolObservation":
+    def from_error(cls, call: AgentToolCall, error: Exception) -> ToolObservation:
         return cls(
             call_id=call.call_id,
             tool_name=call.name,
