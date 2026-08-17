@@ -1,28 +1,23 @@
-# Task Report — KF-008 Provider-Neutral Agent Runtime
+# Task Report — KF-009 OpenAI-Compatible Agent Adapter
 
 ## Status
 
-Implemented the first bounded provider-neutral agent execution loop on `agent/retrieval-cli-evaluation`.
+Implemented the first concrete provider adapter for the provider-neutral KnowledgeForge agent runtime on `agent/retrieval-cli-evaluation`.
 
 ## Delivered
 
-- Added `AgentToolCall` for model-requested tool invocations.
-- Added `AgentModelResponse` for provider-neutral model decisions.
-- Added `AgentMessage` for provider-neutral conversation state.
-- Added `ToolObservation` for successful and failed tool executions.
-- Added `AgentStep`, `AgentTrace`, and `AgentRunResult` for deterministic execution traces.
-- Added `AgentPlanner` protocol as the future provider adapter boundary.
-- Added `AgentRuntimeConfig` with explicit safety limits.
-- Added `AgentRuntime` with:
-  - bounded iteration loop
-  - total tool-call limit
-  - duplicate tool-call loop protection
-  - response validation
-  - tool-error isolation
-  - final-answer termination
-- Exposed `KnowledgeAgent.runtime` as the runtime over its existing provider-neutral tool registry.
-- Added ADR-0008 documenting the runtime architecture and provider boundary.
-- Added focused runtime tests covering successful tool execution, planner recovery after tool failure, prompt validation, iteration limits, tool-call limits, duplicate-call protection, and duplicate call IDs.
+- Added `OpenAICompatibleAgentPlanner` under `infrastructure.ai`.
+- Added generic `OpenAICompatibleClient.chat_completion()` support while preserving the existing text-only `chat()` API.
+- Added bidirectional message translation between runtime contracts and OpenAI-compatible Chat Completions payloads.
+- Added parsing and validation for provider function tool calls.
+- Preserved provider tool-call IDs and JSON arguments across runtime turns.
+- Added `KnowledgeAgent.planner` as the concrete provider adapter boundary.
+- Added `KnowledgeAgent.run_agent()` as the application-level entry point for bounded tool-using execution.
+- Added ADR-0009 documenting the provider adapter architecture and boundaries.
+- Added adapter tests for final text responses, tool-call normalization, assistant/tool message translation, malformed arguments, and malformed provider responses.
+- Added HTTP client tests for generic chat completion payloads and tool declarations.
+- Added an application integration test proving a real `get_note` core tool can execute through the runtime and provider adapter before the final answer is returned.
+- Fixed the two Ruff `UP037` findings in `agent_runtime.py`.
 
 ## Architecture
 
@@ -31,41 +26,47 @@ The agent execution boundary is now:
 ```text
 KnowledgeAgent
     |
-    +-- AgentRuntime
-          |
-          +-- AgentPlanner (provider adapter boundary)
-          |
-          +-- KnowledgeToolRegistry
-                |
-                +-- search_knowledge
-                +-- inspect_note_graph
-                +-- get_note
-                +-- list_related_notes
+    +-- AgentRuntime ------------------+
+    |                                  |
+    |                                  +-- AgentPlanner protocol
+    |                                           |
+    |                                           +-- OpenAICompatibleAgentPlanner
+    |                                                   |
+    |                                                   +-- OpenAICompatibleClient
+    |
+    +-- KnowledgeToolRegistry
+            |
+            +-- search_knowledge
+            +-- inspect_note_graph
+            +-- get_note
+            +-- list_related_notes
 ```
 
-The runtime knows only application-level contracts. A future OpenAI-compatible, Ollama, or other provider adapter can translate its native response into `AgentModelResponse` and translate `AgentMessage` values back to provider messages.
+The runtime still knows only application-level contracts. The provider adapter owns provider-specific message and tool-call JSON. The existing HTTP client owns transport and endpoint details.
 
 ## Guardrails
 
-The default runtime limits are:
+The runtime continues to enforce:
 
 - 8 model iterations per run
 - 16 total tool calls per run
 - 2 consecutive identical tool-call signatures
-
-Tool failures are returned to the planner as structured observations instead of immediately terminating the run.
+- unique tool-call IDs within a model response
+- isolated tool failures returned as structured observations
 
 ## Validation
 
-The latest user-reported local baseline before this milestone was 157 passing tests with clean Ruff output. The new runtime commits were created directly in GitHub and still need to be pulled into the user's Windows checkout and validated locally.
+The user-reported local baseline before this milestone was 164 passing tests, with Ruff reporting two fixable type-annotation findings in the new runtime. This milestone includes the lint fix and new adapter/application tests.
 
-Run locally after pulling:
+After pulling the new commits into the Windows checkout, run:
 
 ```powershell
 python -m uv run ruff check .
 python -m uv run pytest -vv
 ```
 
+Expected direction: all tests should remain green and Ruff should be clean.
+
 ## Next Step
 
-Implement the first concrete provider adapter for the existing OpenAI-compatible client. It should translate provider tool-call responses into `AgentModelResponse`, translate runtime messages back into provider chat messages, and remain independently testable with mocked HTTP responses. Do not couple the runtime to the provider implementation.
+Build the agent-facing CLI command around `KnowledgeAgent.run_agent()` with structured output and trace visibility. The command should expose the bounded runtime without leaking provider-specific payloads, support a human-readable mode first, and provide JSON output suitable for later evaluation and automated workflows. Mutation tools should remain out of the agent registry until authorization is explicitly designed.
