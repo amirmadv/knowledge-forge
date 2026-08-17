@@ -52,4 +52,5 @@ def test_client_parses_embedding_response(monkeypatch) -> None:
         embedding_model="embed-model",
     )
 
+    assert client.embedding_model == "embed-model"
     assert client.embed("hello") == (1.0, 2.5, 3.0)
