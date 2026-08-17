@@ -24,3 +24,8 @@ def ask(question: str) -> None:
         raise typer.Exit(code=1) from exc
 
     typer.echo(result.answer)
+
+    if result.sources:
+        typer.echo("\nSources:")
+        for source in result.sources:
+            typer.echo(f"- {source}")
