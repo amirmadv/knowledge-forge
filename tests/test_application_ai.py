@@ -59,6 +59,7 @@ def test_agent_uses_note_content_and_graph_context(tmp_path: Path) -> None:
     result = agent.ask("Linear Regression")
 
     assert result.answer == "mock answer"
+    assert result.sources == ("Linear Regression", "Gradient Descent")
     assert "# Note: Linear Regression" in client.prompt
     assert "Linear Regression" in client.prompt
     assert "Gradient Descent" in client.prompt
@@ -73,7 +74,9 @@ def test_agent_includes_graph_neighbor_note_content(tmp_path: Path) -> None:
     create_note(title="Gradient Descent", vault_path=vault_path)
     update_note(
         title="Gradient Descent",
-        content="Gradient descent updates model parameters by following the loss gradient.",
+        content=(
+            "Gradient descent updates model parameters by following the loss gradient."
+        ),
         vault_path=vault_path,
     )
     add_note_relationship(
@@ -102,7 +105,10 @@ def test_agent_falls_back_to_query_terms(tmp_path: Path) -> None:
     create_note(title="Linear Regression", vault_path=vault_path)
     update_note(
         title="Linear Regression",
-        content="Linear regression predicts a target using a weighted linear combination of features.",
+        content=(
+            "Linear regression predicts a target using a weighted linear "
+            "combination of features."
+        ),
         vault_path=vault_path,
     )
 
