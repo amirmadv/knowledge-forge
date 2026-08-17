@@ -115,7 +115,7 @@ def test_context_builder_respects_total_character_limit(tmp_path: Path) -> None:
     context = builder.build(note_service.list_notes())
 
     assert len(context) <= 400
-    assert context.startswith("# Note: Linear Regression")
+    assert context.startswith("[S1] # Note: Linear Regression")
 
 
 def test_context_builder_includes_graph_relationships(tmp_path: Path) -> None:
@@ -142,3 +142,21 @@ def test_context_builder_includes_graph_relationships(tmp_path: Path) -> None:
     assert "Linear Regression" in context
     assert "Gradient Descent" in context
     assert "prerequisite" in context
+
+
+def test_context_builder_returns_stable_source_references(tmp_path: Path) -> None:
+    """Each rendered note should receive a stable prompt citation marker."""
+    vault_path = tmp_path / "vault"
+    create_note(title="Linear Regression", vault_path=vault_path)
+    create_note(title="Gradient Descent", vault_path=vault_path)
+    note_service, graph_service = _services(vault_path)
+    builder = ContextBuilder(note_service, graph_service)
+
+    context, sources = builder.build_with_sources(note_service.list_notes())
+
+    assert "[S1] # Note: Linear Regression" in context
+    assert "[S2] # Note: Gradient Descent" in context
+    assert [(source.marker, source.title) for source in sources] == [
+        ("S1", "Linear Regression"),
+        ("S2", "Gradient Descent"),
+    ]
