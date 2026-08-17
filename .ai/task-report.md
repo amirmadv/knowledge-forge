@@ -1,99 +1,77 @@
-# Task Report — KF-010 Bounded Agent CLI
+# Task Report — KF-011 Agent Evaluation and Observability
 
 ## Status
 
-Implemented the first explicit CLI entry point for the bounded KnowledgeForge tool-using agent on `agent/retrieval-cli-evaluation`.
+Advanced the bounded KnowledgeForge agent with a deterministic, offline evaluation harness while preserving the provider-neutral runtime boundary.
 
 ## Delivered
 
-### Provider integration
+### Compatibility fix
 
-- Added `OpenAICompatibleAgentPlanner` as the concrete `AgentPlanner` adapter.
-- Extended `OpenAICompatibleClient` with generic `chat_completion()` support.
-- Kept provider-specific message and tool-call JSON inside infrastructure.
-- Added strict parsing for tool-call IDs, function names, and JSON argument objects.
+- Extended the application-level `create_note()` command with an optional `content` argument.
+- The command still creates notes through the configured template and metadata pipeline; when explicit content is supplied, it replaces the generated body through the existing note-service update path.
+- This resolves the application integration regression reported after pulling the agent CLI milestone.
 
-### Application integration
+### Deterministic agent evaluation
 
-- Added `KnowledgeAgent.planner` for the configured provider adapter.
-- Added `KnowledgeAgent.run_agent()` as the application-level bounded agent entry point.
-- Kept `AgentRuntime` provider-neutral and independently testable.
+- Added `application.agent_evaluation` with a provider-independent evaluation model.
+- Added `ScriptedAgentPlanner` so planner decisions can be replayed without network access or a live model.
+- Added evaluation assertions for:
+  - successful task completion;
+  - expected answer text;
+  - required tool usage;
+  - per-case tool-call budgets;
+  - tool-call success/failure counts;
+  - repeated tool-call signatures.
+- Added aggregate metrics for completion rate, average tool calls, tool success rate, and repeated-tool cases.
+- Added stable JSON serialization for machine-readable evaluation reports.
+- Added JSON dataset loading with validation.
 
-### CLI
+### Tests
 
-- Added `knowledgeforge-ai agent <prompt>`.
-- Default output is human-readable text with final answer and trace summary.
-- Added `--output json` for deterministic machine-readable execution traces.
-- Added validation for unsupported output formats.
-- Preserved the existing `ask`, `search`, `evaluate`, `chat`, `index`, and Copilot commands.
-
-### Tests and architecture
-
-- Added provider adapter unit tests.
-- Added generic chat-completion HTTP payload tests.
-- Added end-to-end application coverage for a real `get_note` tool call through the runtime and adapter.
-- Added CLI tests for human-readable and JSON agent output.
-- Added ADR-0009 for the provider adapter.
-- Added ADR-0010 for the bounded agent CLI contract.
-- Fixed the two Ruff `UP037` findings in `agent_runtime.py`.
+- Added `tests/test_agent_evaluation.py` covering runtime replay, evaluation failures, repeated calls, dataset loading, invalid datasets, and report shape.
 
 ## Current Architecture
 
 ```text
-knowledgeforge-ai agent
-          |
-          v
-KnowledgeAgent.run_agent()
-          |
-          v
-    AgentRuntime
-          |
-          +---- AgentPlanner protocol
-          |          |
-          |          +---- OpenAICompatibleAgentPlanner
-          |                       |
-          |                       +---- OpenAICompatibleClient
-          |
-          +---- KnowledgeToolRegistry
-                     |
-                     +---- search_knowledge
-                     +---- inspect_note_graph
-                     +---- get_note
-                     +---- list_related_notes
+AgentEvaluationCase
+        |
+        v
+ScriptedAgentPlanner ----> AgentRuntime ----> KnowledgeToolRegistry
+        |                         |
+        |                         +---- bounded execution guardrails
+        |
+        +---- deterministic model decisions
+
+                |
+                v
+        AgentEvaluationReport
+          |      |      |
+          |      |      +---- repeated-tool cases
+          |      +----------- tool success rate
+          +------------------ completion / efficiency metrics
 ```
 
-The runtime remains the single place for execution guardrails. The provider adapter remains the single place for OpenAI-compatible wire translation. The CLI consumes only application-level results.
+The evaluator deliberately reuses the real `AgentRuntime` instead of duplicating execution logic. This keeps evaluation aligned with production guardrails.
 
 ## Guardrails
 
 The runtime continues to enforce:
 
-- 8 model iterations per run
-- 16 total tool calls per run
-- 2 consecutive identical tool-call signatures
-- unique tool-call IDs within a model response
-- isolated tool failures returned as structured observations
+- 8 model iterations per run;
+- 16 total tool calls per run;
+- consecutive identical tool-call detection;
+- unique tool-call IDs within a model response;
+- isolated tool failures returned as structured observations.
 
 ## Validation
 
-The latest user-reported local baseline before these milestones was 164 passing tests, with two Ruff type-annotation findings. The code changes above include additional tests and the lint fixes.
+The latest user-reported checkout had 174 passing tests and one application integration failure caused by `create_note(content=...)`. That compatibility issue is now addressed in the application command layer.
 
-After pulling the branch into the Windows checkout, run:
-
-```powershell
-python -m uv run ruff check .
-python -m uv run pytest -vv
-```
-
-Then verify the new CLI surface with:
-
-```powershell
-python -m uv run knowledgeforge-ai agent "What is in my knowledge vault?"
-python -m uv run knowledgeforge-ai agent "What is in my knowledge vault?" --output json
-```
-
-The second command is intended to become the stable machine-readable interface for future agent evaluation.
+The same checkout also reported one Ruff import-order finding in `src/knowledgeforge/ai_cli.py`; this remains a small cleanup item to verify/fix in the user's working tree.
 
 ## Next Step
 
-The next milestone should focus on **agent evaluation and observability**, not adding more tools yet. Build an offline agent-evaluation harness that can replay deterministic planner decisions, measure tool-call efficiency and successful task completion, detect repeated-tool behavior, and produce JSON reports. Once that harness is stable, introduce explicit read/write authorization boundaries before any mutating tool is exposed to the agent.
+Next milestone: **authorization boundaries and controlled tool capabilities**.
+
+Before exposing any mutating capability to the agent, introduce explicit read-only versus write-capable tool policies, make the runtime enforce the policy, and add evaluation cases proving that read-only runs cannot invoke mutating tools. After that, add the first controlled write workflow behind an explicit application-level authorization boundary.
