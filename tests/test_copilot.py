@@ -5,6 +5,7 @@ from pathlib import Path
 from knowledgeforge.application.ai import KnowledgeAgent
 from knowledgeforge.application.copilot import KnowledgeCopilot
 from knowledgeforge.domain.note import NoteService
+from knowledgeforge.domain.relationship import RelationshipService
 from knowledgeforge.infrastructure.config.settings import Settings
 
 
@@ -23,7 +24,10 @@ class FakeAIClient:
         return (1.0,)
 
 
-def _copilot(tmp_path: Path, response: str = "mock response") -> tuple[KnowledgeCopilot, FakeAIClient, NoteService]:
+def _copilot(
+    tmp_path: Path,
+    response: str = "mock response",
+) -> tuple[KnowledgeCopilot, FakeAIClient, NoteService]:
     vault_path = tmp_path / "vault"
     note_service = NoteService(vault_path)
     client = FakeAIClient(response)
@@ -48,14 +52,19 @@ def test_summarize_uses_note_content(tmp_path: Path) -> None:
 
 
 def test_suggest_tags_does_not_modify_note(tmp_path: Path) -> None:
-    copilot, client, note_service = _copilot(tmp_path, "machine-learning, regression")
+    copilot, client, note_service = _copilot(
+        tmp_path,
+        "machine-learning, regression",
+    )
     note_service.create("Linear Regression")
     note_service.update_content("Linear Regression", "A regression model.")
 
     result = copilot.suggest_tags("Linear Regression")
 
     assert result.answer == "machine-learning, regression"
-    assert note_service.read_content("Linear Regression").endswith("A regression model.\n")
+    assert note_service.read_content("Linear Regression").endswith(
+        "A regression model.\n"
+    )
     assert "comma-separated" in client.prompts[0]
 
 
@@ -71,7 +80,10 @@ def test_improve_updates_note_body(tmp_path: Path) -> None:
 
 
 def test_create_note_generates_and_persists_body(tmp_path: Path) -> None:
-    copilot, _, note_service = _copilot(tmp_path, "# Gradient Descent\n\nA method.")
+    copilot, _, note_service = _copilot(
+        tmp_path,
+        "# Gradient Descent\n\nA method.",
+    )
 
     result = copilot.create_note(
         "Gradient Descent",
@@ -88,9 +100,7 @@ def test_knowledge_gaps_includes_graph_context(tmp_path: Path) -> None:
     note_service.create("Linear Regression")
     note_service.create("Gradient Descent")
 
-    from knowledgeforge.domain.graph import GraphService
-
-    GraphService(tmp_path / "vault").add(
+    RelationshipService(tmp_path / "vault").add(
         "Linear Regression",
         "Gradient Descent",
         "prerequisite",
