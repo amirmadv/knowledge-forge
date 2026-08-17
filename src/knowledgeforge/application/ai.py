@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from knowledgeforge.application.agent_runtime import AgentRuntime
 from knowledgeforge.application.retrieval import (
     ContextBuilder,
     HybridRetriever,
@@ -101,6 +102,11 @@ class KnowledgeAgent:
         from knowledgeforge.application.tools import build_knowledge_tool_registry
 
         return build_knowledge_tool_registry(self)
+
+    @property
+    def runtime(self) -> AgentRuntime:
+        """Expose a bounded provider-neutral runtime over the core tools."""
+        return AgentRuntime(self.tools)
 
     def ask(
         self,
