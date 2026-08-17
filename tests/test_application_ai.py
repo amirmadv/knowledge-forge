@@ -1,5 +1,6 @@
 """Tests for the KnowledgeForge AI application layer."""
 
+import json
 from pathlib import Path
 
 from knowledgeforge.application.ai import KnowledgeAgent
@@ -17,11 +18,46 @@ class FakeAIClient:
     def __init__(self) -> None:
         self.prompt = ""
         self.system = ""
+        self.completion_calls = 0
 
     def chat(self, prompt: str, system: str | None = None) -> str:
         self.prompt = prompt
         self.system = system or ""
         return "mock answer"
+
+    def chat_completion(self, messages, *, tools=None):
+        self.completion_calls += 1
+        if self.completion_calls == 1:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "get_note",
+                                        "arguments": json.dumps({"title": "Linear Regression"}),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "Linear Regression is in the vault.",
+                    }
+                }
+            ]
+        }
 
 
 def _settings(vault_path: Path) -> Settings:
@@ -210,3 +246,28 @@ def test_agent_rejects_empty_question(tmp_path: Path) -> None:
         assert str(exc) == "Question cannot be empty."
     else:
         raise AssertionError("Expected ValueError")
+
+
+def test_agent_runtime_uses_provider_adapter_and_core_tool(tmp_path: Path) -> None:
+    """The application agent should execute a real core tool through the adapter."""
+    vault_path = tmp_path / "vault"
+    create_note(
+        title="Linear Regression",
+        content="A note about linear regression.",
+        vault_path=vault_path,
+    )
+
+    client = FakeAIClient()
+    agent = KnowledgeAgent(
+        settings=_settings(vault_path),
+        client=client,
+    )
+
+    result = agent.run_agent("Read the Linear Regression note.")
+
+    assert result.answer == "Linear Regression is in the vault."
+    assert result.trace.tool_call_count == 1
+    assert result.trace.termination_reason == "final_answer"
+    assert result.trace.steps[0].observations[0].success is True
+    assert result.trace.steps[0].observations[0].tool_name == "get_note"
+    assert client.completion_calls == 2
