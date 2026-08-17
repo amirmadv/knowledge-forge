@@ -36,6 +36,7 @@ class KnowledgeAgent:
     GRAPH_DEPTH = 1
     MAX_QUERY_TERMS = 8
     MIN_QUERY_TERM_LENGTH = 3
+    MAX_HISTORY_TURNS = 8
 
     def __init__(
         self,
@@ -63,14 +64,19 @@ class KnowledgeAgent:
         self._note_service = note_service or NoteService(resolved_vault_path)
         self._graph_service = graph_service or GraphService(resolved_vault_path)
 
-    def ask(self, question: str) -> AIAnswer:
-        """Answer a question using notes and their graph neighborhood."""
+    def ask(
+        self,
+        question: str,
+        history: tuple[tuple[str, str], ...] = (),
+    ) -> AIAnswer:
+        """Answer a question using notes, graph context, and optional history."""
         normalized_question = question.strip()
         if not normalized_question:
             raise ValueError("Question cannot be empty.")
 
         notes = self._retrieve_context_notes(normalized_question)
         context = self._build_context(notes)
+        conversation = self._build_history(history)
 
         prompt = (
             "Answer the user's question using the supplied KnowledgeForge "
@@ -78,6 +84,7 @@ class KnowledgeAgent:
             "and graph relationships from the user's vault. Do not invent "
             "facts that are not supported by the context. If the context is "
             "insufficient, state what is missing clearly.\n\n"
+            f"Conversation history:\n{conversation}\n\n"
             f"Question:\n{normalized_question}\n\n"
             f"Knowledge context:\n{context or '(no matching notes)'}"
         )
@@ -87,7 +94,9 @@ class KnowledgeAgent:
                 prompt,
                 system=(
                     "You are the KnowledgeForge personal knowledge agent. "
-                    "Prefer the user's local knowledge over generic assumptions."
+                    "Prefer the user's local knowledge over generic assumptions. "
+                    "Use conversation history only to resolve references and "
+                    "maintain continuity; the vault remains the source of truth."
                 ),
             ),
             sources=tuple(note.title for note in notes),
@@ -163,6 +172,18 @@ class KnowledgeAgent:
                 break
 
         return terms
+
+    @classmethod
+    def _build_history(cls, history: tuple[tuple[str, str], ...]) -> str:
+        """Format bounded conversation history for the provider prompt."""
+        if not history:
+            return "(none)"
+
+        bounded_history = history[-cls.MAX_HISTORY_TURNS :]
+        return "\n\n".join(
+            f"User: {question.strip()}\nAssistant: {answer.strip()}"
+            for question, answer in bounded_history
+        )
 
     def _build_context(self, notes: list[Note]) -> str:
         """Build bounded textual context from notes and graph data."""
