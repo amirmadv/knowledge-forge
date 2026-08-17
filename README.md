@@ -16,6 +16,7 @@ before asking an OpenAI-compatible model for an answer.
 - Semantic embedding retrieval with lexical fallback
 - Persistent, incremental semantic embedding index
 - Explainable hybrid retrieval with semantic, lexical, and metadata score breakdowns
+- Retrieval evaluation with Precision@K, Recall@K, MRR, and configurable quality gates
 - Bounded conversational memory for follow-up AI questions
 - Grounded source-note reporting for every AI answer
 - OpenAI-compatible chat and embedding client
@@ -129,6 +130,41 @@ chat model. If embeddings are unavailable, KnowledgeForge automatically falls ba
 lexical retrieval so the core agent remains usable.
 
 The CLI prints the note titles used as grounded sources for each AI answer.
+
+## Retrieval evaluation
+
+Create a small gold dataset containing query-to-note-slug relationships, for example:
+
+```json
+{
+  "cases": [
+    {
+      "query": "linear regression",
+      "relevant": ["linear-regression"]
+    },
+    {
+      "query": "gradient descent",
+      "relevant": ["gradient-descent", "optimization"]
+    }
+  ]
+}
+```
+
+Run the evaluation:
+
+```powershell
+knowledgeforge-ai evaluate .\evals\retrieval.json `
+  --k 5 `
+  --min-precision 0.60 `
+  --min-recall 0.80 `
+  --min-mrr 0.75
+```
+
+The command reports Precision@K, Recall@K, and MRR. A failed quality gate exits with code `2`
+by default, making the command suitable for CI. Use `--details` for per-query diagnostics or
+`--no-fail-on-gate` when you want a report without failing the process.
+
+See `docs/evaluation/retrieval-evaluation.md` for the dataset contract and evaluation guidance.
 
 ## Development checks
 
