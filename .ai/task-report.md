@@ -24,14 +24,14 @@ Advanced the bounded KnowledgeForge agent with explicit read-only versus write-c
 ### First controlled write workflow
 
 - Added `CreateNoteTool` as the first write-capable agent tool.
-- The write tool is only registered when the application explicitly builds a write-capable registry.
+- Policy-aware runtime registries can contain the write capability, but `READ_ONLY` provider exposure hides it and `READ_ONLY` execution rejects it. This gives defense in depth instead of relying on discovery filtering alone.
 - The tool creates a note through the existing `NoteService`, then applies the requested Markdown content through the existing update path.
 - The tool returns structured note metadata and content.
 
 ### Application boundary
 
-- `KnowledgeAgent.tools` remains read-only by default.
-- Added `KnowledgeAgent.tools_for_access()` for explicit capability selection.
+- `KnowledgeAgent.tools` remains read-only by default for backward compatibility.
+- Added `KnowledgeAgent.tools_for_access()` for explicit policy-aware registry construction.
 - Added `KnowledgeAgent.runtime(access=...)` for explicit runtime policy selection.
 - Added `KnowledgeAgent.run_agent(..., access=...)`, defaulting to read-only.
 
@@ -64,7 +64,7 @@ Added deterministic coverage for:
                     |                               |
                     v                               v
           core read tools                 core read tools
-          only exposed                   + create_note
+          + hidden writes                 + create_note
                     |                               |
                     +---------------+---------------+
                                     v
