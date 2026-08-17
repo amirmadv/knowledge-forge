@@ -1,6 +1,5 @@
 """Tests for the KnowledgeForge AI CLI."""
 
-from pathlib import Path
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
@@ -19,7 +18,11 @@ def _fake_agent() -> SimpleNamespace:
             semantic_score=0.9,
             lexical_score=0.5,
             metadata_score=0.25,
-            reasons=("semantic similarity", "body lexical match", "metadata/tag match"),
+            reasons=(
+                "semantic similarity",
+                "body lexical match",
+                "metadata/tag match",
+            ),
         ),
         SimpleNamespace(
             note=SimpleNamespace(title="Linear Regression"),
@@ -30,7 +33,9 @@ def _fake_agent() -> SimpleNamespace:
             reasons=("title/body lexical match",),
         ),
     ]
-    return SimpleNamespace(search_with_evidence=lambda query, limit=8: evidence[:limit])
+    return SimpleNamespace(
+        search_with_evidence=lambda query, limit=8: evidence[:limit]
+    )
 
 
 def test_search_command_prints_ranked_titles(monkeypatch) -> None:
@@ -67,7 +72,8 @@ def test_search_limit_is_respected(monkeypatch) -> None:
     calls: list[int] = []
     agent = SimpleNamespace(
         search_with_evidence=lambda query, limit=8: (
-            calls.append(limit) or _fake_agent().search_with_evidence(query, limit)
+            calls.append(limit)
+            or _fake_agent().search_with_evidence(query, limit)
         )
     )
     monkeypatch.setattr("knowledgeforge.ai_cli._agent", lambda: agent)
