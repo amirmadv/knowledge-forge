@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 
 from knowledgeforge.application.commands import (
     INITIALIZATION_SUCCESS_MESSAGE,
+    add_note_relationship,
     create_note,
     initialize_knowledgeforge,
 )
@@ -189,4 +190,198 @@ def test_note_list_command_filters_by_tag(
 
     assert result.exit_code == 0
     assert "Machine Learning" in result.stdout
-    assert "Python" not in result.stdout    
+    assert "Python" not in result.stdout
+
+
+def test_note_graph_command_returns_graph(
+    tmp_path: Path,
+) -> None:
+    """The note graph command should display graph nodes and edges."""
+    vault_path = tmp_path / "vault"
+    templates_path = tmp_path / "templates"
+
+    initialize_knowledgeforge(vault_path)
+
+    create_note(
+        title="Machine Learning",
+        vault_path=vault_path,
+        templates_path=templates_path,
+    )
+
+    create_note(
+        title="Linear Regression",
+        vault_path=vault_path,
+        templates_path=templates_path,
+    )
+
+    add_note_relationship(
+        source_title="Machine Learning",
+        target_title="Linear Regression",
+        relation_type="related",
+        vault_path=vault_path,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "note",
+            "graph",
+            "Machine Learning",
+            "--depth",
+            "1",
+        ],
+        env={
+            "KNOWLEDGEFORGE_VAULT_PATH": str(vault_path),
+            "KNOWLEDGEFORGE_TEMPLATES_PATH": str(templates_path),
+        },
+    )
+
+    assert result.exit_code == 0
+    assert "Graph for: Machine Learning" in result.stdout
+    assert "Depth: 1" in result.stdout
+    assert "machine-learning" in result.stdout
+    assert "linear-regression" in result.stdout
+    assert "machine-learning --[related]--> linear-regression" in result.stdout
+
+
+def test_note_ancestors_command_returns_ancestors(
+    tmp_path: Path,
+) -> None:
+    """The ancestors command should display recursive ancestors."""
+    vault_path = tmp_path / "vault"
+    templates_path = tmp_path / "templates"
+
+    initialize_knowledgeforge(vault_path)
+
+    create_note(
+        title="Machine Learning",
+        vault_path=vault_path,
+        templates_path=templates_path,
+    )
+
+    create_note(
+        title="Linear Regression",
+        vault_path=vault_path,
+        templates_path=templates_path,
+    )
+
+    add_note_relationship(
+        source_title="Machine Learning",
+        target_title="Linear Regression",
+        relation_type="related",
+        vault_path=vault_path,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "note",
+            "ancestors",
+            "Linear Regression",
+        ],
+        env={
+            "KNOWLEDGEFORGE_VAULT_PATH": str(vault_path),
+            "KNOWLEDGEFORGE_TEMPLATES_PATH": str(templates_path),
+        },
+    )
+
+    assert result.exit_code == 0
+    assert "Ancestors of: Linear Regression" in result.stdout
+    assert "machine-learning" in result.stdout
+
+
+def test_note_descendants_command_returns_descendants(
+    tmp_path: Path,
+) -> None:
+    """The descendants command should display recursive descendants."""
+    vault_path = tmp_path / "vault"
+    templates_path = tmp_path / "templates"
+
+    initialize_knowledgeforge(vault_path)
+
+    create_note(
+        title="Machine Learning",
+        vault_path=vault_path,
+        templates_path=templates_path,
+    )
+
+    create_note(
+        title="Linear Regression",
+        vault_path=vault_path,
+        templates_path=templates_path,
+    )
+
+    add_note_relationship(
+        source_title="Machine Learning",
+        target_title="Linear Regression",
+        relation_type="related",
+        vault_path=vault_path,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "note",
+            "descendants",
+            "Machine Learning",
+        ],
+        env={
+            "KNOWLEDGEFORGE_VAULT_PATH": str(vault_path),
+            "KNOWLEDGEFORGE_TEMPLATES_PATH": str(templates_path),
+        },
+    )
+
+    assert result.exit_code == 0
+    assert "Descendants of: Machine Learning" in result.stdout
+    assert "linear-regression" in result.stdout
+
+def test_note_stats_command_returns_graph_statistics(
+    tmp_path: Path,
+) -> None:
+    """The note stats command should display graph statistics."""
+    vault_path = tmp_path / "vault"
+    templates_path = tmp_path / "templates"
+
+    initialize_knowledgeforge(vault_path)
+
+    create_note(
+        title="Machine Learning",
+        vault_path=vault_path,
+        templates_path=templates_path,
+    )
+
+    create_note(
+        title="Linear Regression",
+        vault_path=vault_path,
+        templates_path=templates_path,
+    )
+
+    add_note_relationship(
+        source_title="Machine Learning",
+        target_title="Linear Regression",
+        relation_type="related",
+        vault_path=vault_path,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "note",
+            "stats",
+        ],
+        env={
+            "KNOWLEDGEFORGE_VAULT_PATH": str(vault_path),
+            "KNOWLEDGEFORGE_TEMPLATES_PATH": str(templates_path),
+        },
+    )
+
+    assert result.exit_code == 0
+    assert "KnowledgeForge Graph Statistics" in result.stdout
+    assert "Nodes: 2" in result.stdout
+    assert "Edges: 1" in result.stdout
+    assert "Orphan nodes: 0" in result.stdout
+    assert "Root nodes: 1" in result.stdout
+    assert "Leaf nodes: 1" in result.stdout
+    assert "Average degree: 1.00" in result.stdout
+    assert "Max degree: 1" in result.stdout
+    assert "Density: 0.5000" in result.stdout    

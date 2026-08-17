@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from knowledgeforge.domain.graph import GraphService, GraphStatistics, NoteGraph
 from knowledgeforge.domain.note import Note, NoteService
 from knowledgeforge.domain.relationship import (
     NoteRelation,
@@ -65,6 +66,24 @@ def _create_note_service(
     return NoteService(
         vault_path=_resolve_vault_path(vault_path),
         template_service=_create_template_service(templates_path),
+    )
+
+
+def _create_relationship_service(
+    vault_path: Path | None = None,
+) -> RelationshipService:
+    """Create a relationship service for the configured vault."""
+    return RelationshipService(
+        vault_path=_resolve_vault_path(vault_path),
+    )
+
+
+def _create_graph_service(
+    vault_path: Path | None = None,
+) -> GraphService:
+    """Create a graph service for the configured vault."""
+    return GraphService(
+        vault_path=_resolve_vault_path(vault_path),
     )
 
 
@@ -184,6 +203,7 @@ def delete_note(
         note=note,
     )
 
+
 def search_notes(
     query: str,
     vault_path: Path | None = None,
@@ -194,16 +214,6 @@ def search_notes(
     )
 
     return service.search(query)
-
-def _create_relationship_service(
-    vault_path: Path | None = None,
-) -> RelationshipService:
-    """Create a relationship service for the configured vault."""
-    resolved_vault_path = _resolve_vault_path(vault_path)
-
-    return RelationshipService(
-        vault_path=resolved_vault_path,
-    )
 
 
 def add_note_relationship(
@@ -246,6 +256,49 @@ def list_note_relationships(
     service = _create_relationship_service(vault_path)
 
     return service.list_for(title)
+
+
+def get_note_graph(
+    title: str,
+    depth: int = 1,
+    vault_path: Path | None = None,
+) -> NoteGraph:
+    """Return the graph around a note."""
+    service = _create_graph_service(vault_path)
+
+    return service.graph(
+        title=title,
+        depth=depth,
+    )
+
+
+def get_note_ancestors(
+    title: str,
+    vault_path: Path | None = None,
+) -> list[str]:
+    """Return all recursive ancestors of a note."""
+    service = _create_graph_service(vault_path)
+
+    return service.ancestors(title)
+
+
+def get_note_descendants(
+    title: str,
+    vault_path: Path | None = None,
+) -> list[str]:
+    """Return all recursive descendants of a note."""
+    service = _create_graph_service(vault_path)
+
+    return service.descendants(title)
+
+
+def get_graph_statistics(
+    vault_path: Path | None = None,
+) -> GraphStatistics:
+    """Return aggregate statistics for the complete note graph."""
+    service = _create_graph_service(vault_path)
+
+    return service.statistics()
 
 
 def list_templates(

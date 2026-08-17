@@ -7,6 +7,9 @@ from knowledgeforge.application.commands import (
     add_note_relationship,
     create_note,
     delete_note,
+    get_note_ancestors,
+    get_note_descendants,
+    get_note_graph,
     initialize_knowledgeforge,
     list_note_relationships,
     remove_note_relationship,
@@ -141,3 +144,145 @@ def test_remove_note_relationship_returns_relationship(
         title="Linear Regression",
         vault_path=vault_path,
     ) == []    
+
+def test_get_note_graph_returns_graph(
+    tmp_path: Path,
+) -> None:
+    """Getting a note graph should return a graph around the note."""
+    vault_path = tmp_path / "vault"
+
+    create_note(
+        title="Machine Learning",
+        vault_path=vault_path,
+    )
+
+    create_note(
+        title="Linear Regression",
+        vault_path=vault_path,
+    )
+
+    create_note(
+        title="Gradient Descent",
+        vault_path=vault_path,
+    )
+
+    add_note_relationship(
+        source_title="Machine Learning",
+        target_title="Linear Regression",
+        relation_type="prerequisite",
+        vault_path=vault_path,
+    )
+
+    add_note_relationship(
+        source_title="Linear Regression",
+        target_title="Gradient Descent",
+        relation_type="prerequisite",
+        vault_path=vault_path,
+    )
+
+    graph = get_note_graph(
+        title="Machine Learning",
+        depth=2,
+        vault_path=vault_path,
+    )
+
+    assert {
+        node.slug
+        for node in graph.nodes
+    } == {
+        "machine-learning",
+        "linear-regression",
+        "gradient-descent",
+    }
+
+    assert len(graph.edges) == 2
+
+def test_get_note_ancestors_returns_recursive_ancestors(
+    tmp_path: Path,
+) -> None:
+    """Getting ancestors should traverse relationships recursively."""
+    vault_path = tmp_path / "vault"
+
+    create_note(
+        title="Machine Learning",
+        vault_path=vault_path,
+    )
+
+    create_note(
+        title="Linear Regression",
+        vault_path=vault_path,
+    )
+
+    create_note(
+        title="Gradient Descent",
+        vault_path=vault_path,
+    )
+
+    add_note_relationship(
+        source_title="Machine Learning",
+        target_title="Linear Regression",
+        relation_type="prerequisite",
+        vault_path=vault_path,
+    )
+
+    add_note_relationship(
+        source_title="Linear Regression",
+        target_title="Gradient Descent",
+        relation_type="prerequisite",
+        vault_path=vault_path,
+    )
+
+    ancestors = get_note_ancestors(
+        title="Gradient Descent",
+        vault_path=vault_path,
+    )
+
+    assert ancestors == [
+        "linear-regression",
+        "machine-learning",
+    ]
+
+def test_get_note_descendants_returns_recursive_descendants(
+    tmp_path: Path,
+) -> None:
+    """Getting descendants should traverse relationships recursively."""
+    vault_path = tmp_path / "vault"
+
+    create_note(
+        title="Machine Learning",
+        vault_path=vault_path,
+    )
+
+    create_note(
+        title="Linear Regression",
+        vault_path=vault_path,
+    )
+
+    create_note(
+        title="Gradient Descent",
+        vault_path=vault_path,
+    )
+
+    add_note_relationship(
+        source_title="Machine Learning",
+        target_title="Linear Regression",
+        relation_type="prerequisite",
+        vault_path=vault_path,
+    )
+
+    add_note_relationship(
+        source_title="Linear Regression",
+        target_title="Gradient Descent",
+        relation_type="prerequisite",
+        vault_path=vault_path,
+    )
+
+    descendants = get_note_descendants(
+        title="Machine Learning",
+        vault_path=vault_path,
+    )
+
+    assert descendants == [
+        "gradient-descent",
+        "linear-regression",
+    ]

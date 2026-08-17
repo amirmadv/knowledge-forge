@@ -57,19 +57,12 @@ class RelationshipService:
         self,
         title: str,
     ) -> Note:
-        """Return a note using the configured note service.
-
-        Args:
-            title: Title of the requested note.
-
-        Returns:
-            The requested Note.
-
-        Raises:
-            NoteNotFoundError: If the note does not exist.
-            InvalidNoteTitleError: If the title is invalid.
-        """
+        """Return a note using the configured note service."""
         return self._note_service.get(title)
+
+    def list_notes(self) -> list[Note]:
+        """Return all notes managed by the configured note service."""
+        return self._note_service.list_notes()
 
     def add(
         self,
@@ -126,20 +119,7 @@ class RelationshipService:
         target_title: str,
         relation_type: RelationshipType | str = RelationshipType.RELATED,
     ) -> NoteRelation:
-        """Remove an existing relationship.
-
-        Args:
-            source_title: Title of the source note.
-            target_title: Title of the target note.
-            relation_type: Type of relationship.
-
-        Returns:
-            The removed relationship.
-
-        Raises:
-            NoteNotFoundError: If either note does not exist.
-            RelationshipNotFoundError: If the relationship does not exist.
-        """
+        """Remove an existing relationship."""
         source = self.get_note(source_title)
         target = self.get_note(target_title)
 
@@ -172,14 +152,7 @@ class RelationshipService:
         self,
         title: str,
     ) -> list[NoteRelation]:
-        """Return all relationships involving a note.
-
-        Args:
-            title: Title of the note.
-
-        Returns:
-            Relationships where the note is either source or target.
-        """
+        """Return all relationships involving a note."""
         note = self.get_note(title)
 
         return sorted(

@@ -29,8 +29,14 @@ def test_mean_reciprocal_rank_averages_queries() -> None:
 
 def test_evaluate_retrieval_returns_aggregate_metrics() -> None:
     cases = [
-        RetrievalEvaluationCase("linear regression", frozenset({"linear"})),
-        RetrievalEvaluationCase("gradient descent", frozenset({"gradient"})),
+        RetrievalEvaluationCase(
+            "linear regression",
+            frozenset({"linear"}),
+        ),
+        RetrievalEvaluationCase(
+            "gradient descent",
+            frozenset({"gradient"}),
+        ),
     ]
 
     result = evaluate_retrieval(
@@ -41,8 +47,32 @@ def test_evaluate_retrieval_returns_aggregate_metrics() -> None:
 
     assert result.queries_evaluated == 2
     assert result.precision_at_k == 0.5
-    assert result.recall_at_k == 0.5
+
+    # Both relevant documents are retrieved within top-2.
+    assert result.recall_at_k == 1.0
+
     assert result.mrr == 0.75
+
+
+def test_evaluate_retrieval_distinguishes_precision_and_recall() -> None:
+    cases = [
+        RetrievalEvaluationCase(
+            "machine learning",
+            frozenset({"ml", "machine-learning"}),
+        ),
+    ]
+
+    result = evaluate_retrieval(
+        cases,
+        [["ml", "noise"]],
+        k=2,
+    )
+
+    # One of two retrieved results is relevant.
+    assert result.precision_at_k == 0.5
+
+    # One of two relevant results was retrieved.
+    assert result.recall_at_k == 0.5
 
 
 def test_evaluate_retrieval_rejects_misaligned_inputs() -> None:
