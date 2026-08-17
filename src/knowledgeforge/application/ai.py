@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from knowledgeforge.application.agent_runtime import AgentRuntime
+from knowledgeforge.application.agent_runtime import AgentRunResult, AgentRuntime
 from knowledgeforge.application.retrieval import (
     ContextBuilder,
     HybridRetriever,
@@ -16,6 +16,7 @@ from knowledgeforge.application.retrieval import (
 from knowledgeforge.application.semantic import SemanticRetriever
 from knowledgeforge.domain.graph import GraphService, NoteGraph
 from knowledgeforge.domain.note import Note, NoteService
+from knowledgeforge.infrastructure.ai.agent_planner import OpenAICompatibleAgentPlanner
 from knowledgeforge.infrastructure.ai.client import (
     AIClientError,
     OpenAICompatibleClient,
@@ -39,6 +40,12 @@ class KnowledgeAgent:
     MAX_QUERY_TERMS = 8
     MIN_QUERY_TERM_LENGTH = 3
     MAX_HISTORY_TURNS = 8
+    AGENT_SYSTEM_PROMPT = (
+        "You are the KnowledgeForge personal knowledge agent. "
+        "Use the user's local knowledge tools when you need facts from the vault. "
+        "Do not invent facts that are not supported by tool results. "
+        "When you have enough evidence, answer the user directly and concisely."
+    )
 
     def __init__(
         self,
@@ -107,6 +114,18 @@ class KnowledgeAgent:
     def runtime(self) -> AgentRuntime:
         """Expose a bounded provider-neutral runtime over the core tools."""
         return AgentRuntime(self.tools)
+
+    @property
+    def planner(self) -> OpenAICompatibleAgentPlanner:
+        """Expose the concrete OpenAI-compatible provider adapter."""
+        return OpenAICompatibleAgentPlanner(
+            self._client,
+            system_prompt=self.AGENT_SYSTEM_PROMPT,
+        )
+
+    def run_agent(self, prompt: str) -> AgentRunResult:
+        """Run the bounded tool-using agent through the configured provider."""
+        return self.runtime.run(prompt, self.planner)
 
     def ask(
         self,
