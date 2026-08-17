@@ -7,6 +7,14 @@ from types import SimpleNamespace
 from typer.testing import CliRunner
 
 from knowledgeforge.ai_cli import app
+from knowledgeforge.application.agent_runtime import (
+    AgentModelResponse,
+    AgentRunResult,
+    AgentStep,
+    AgentToolCall,
+    AgentTrace,
+    ToolObservation,
+)
 
 runner = CliRunner()
 
@@ -37,6 +45,34 @@ def _fake_agent() -> SimpleNamespace:
     ]
     return SimpleNamespace(
         search_with_evidence=lambda query, limit=8: evidence[:limit]
+    )
+
+
+def _fake_agent_run_result() -> AgentRunResult:
+    """Build a deterministic bounded agent result for CLI tests."""
+    call = AgentToolCall(
+        call_id="call_1",
+        name="search_knowledge",
+        arguments={"query": "linear regression", "limit": 3},
+    )
+    observation = ToolObservation(
+        call_id="call_1",
+        tool_name="search_knowledge",
+        success=True,
+        data={"results": [{"title": "Linear Regression"}]},
+    )
+    step = AgentStep(
+        response=AgentModelResponse(content="", tool_calls=(call,)),
+        observations=(observation,),
+    )
+    final_step = AgentStep(response=AgentModelResponse(content="Found it."))
+    return AgentRunResult(
+        answer="Found it.",
+        trace=AgentTrace(
+            steps=(step, final_step),
+            tool_call_count=1,
+            termination_reason="final_answer",
+        ),
     )
 
 
@@ -299,6 +335,53 @@ def test_evaluate_command_rejects_unknown_output_format(
         app,
         ["evaluate", str(dataset), "--output", "yaml"],
     )
+
+    assert result.exit_code == 1
+    assert "Output format must be 'text' or 'json'." in result.stderr
+
+
+def test_agent_command_prints_answer_and_trace(monkeypatch) -> None:
+    """The agent command should expose a compact human-readable trace."""
+    fake = SimpleNamespace(run_agent=lambda prompt: _fake_agent_run_result())
+    monkeypatch.setattr("knowledgeforge.ai_cli._agent", lambda: fake)
+
+    result = runner.invoke(app, ["agent", "Find linear regression"])
+
+    assert result.exit_code == 0
+    assert "Found it." in result.stdout
+    assert "Agent trace:" in result.stdout
+    assert "termination: final_answer" in result.stdout
+    assert "tool calls: 1" in result.stdout
+    assert "search_knowledge: ok" in result.stdout
+
+
+def test_agent_command_supports_json_output(monkeypatch) -> None:
+    """The agent command should expose a stable machine-readable trace."""
+    fake = SimpleNamespace(run_agent=lambda prompt: _fake_agent_run_result())
+    monkeypatch.setattr("knowledgeforge.ai_cli._agent", lambda: fake)
+
+    result = runner.invoke(
+        app,
+        ["agent", "Find linear regression", "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["answer"] == "Found it."
+    assert payload["trace"]["tool_call_count"] == 1
+    assert payload["trace"]["termination_reason"] == "final_answer"
+    assert payload["trace"]["steps"][0]["response"]["tool_calls"][0]["name"] == (
+        "search_knowledge"
+    )
+    assert payload["trace"]["steps"][0]["observations"][0]["success"] is True
+
+
+def test_agent_command_rejects_unknown_output_format(monkeypatch) -> None:
+    """The agent command should reject unsupported output formats."""
+    fake = SimpleNamespace(run_agent=lambda prompt: _fake_agent_run_result())
+    monkeypatch.setattr("knowledgeforge.ai_cli._agent", lambda: fake)
+
+    result = runner.invoke(app, ["agent", "hello", "--output", "yaml"])
 
     assert result.exit_code == 1
     assert "Output format must be 'text' or 'json'." in result.stderr
