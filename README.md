@@ -14,12 +14,13 @@ before asking an OpenAI-compatible model for an answer.
 - Directed knowledge graph with ancestors, descendants, backlinks, and neighborhoods
 - Graph-aware AI agent with local-first RAG retrieval
 - Semantic embedding retrieval with lexical fallback
+- Persistent, incremental semantic embedding index
 - Bounded conversational memory for follow-up AI questions
 - Grounded source-note reporting for every AI answer
 - OpenAI-compatible chat and embedding client
 - CLI for normal KnowledgeForge operations and AI questions
 - Interactive `knowledgeforge-ai chat` mode
-- 105 automated tests currently passing on the development environment
+- Knowledge Copilot for summaries, tags, note improvement, related notes, knowledge gaps, and note creation
 
 ## Requirements
 
@@ -87,13 +88,31 @@ knowledgeforge-ai chat
 
 Inside chat, use `/clear` to reset conversation memory and `/exit` to leave.
 
+## Semantic index
+
+Semantic embeddings are stored locally at:
+
+```text
+vault/.knowledgeforge/semantic-index.json
+```
+
+The index is updated incrementally. Unchanged notes reuse their existing vectors;
+changed notes are re-embedded automatically. Changing the configured embedding model
+invalidates the previous vectors.
+
+To explicitly rebuild the complete index:
+
+```powershell
+knowledgeforge-ai index
+```
+
 The agent retrieves knowledge in this order: exact local matches first, then semantic
 embedding similarity when the provider supports embeddings, then keyword matches. The
 selected notes are expanded through the knowledge graph before the final prompt is sent
-to the chat model. If embeddings are unavailable, KnowledgeForge automatically falls back
-to lexical retrieval so the core agent remains usable.
+to the chat model. If embeddings are unavailable, KnowledgeForge automatically falls
+back to lexical retrieval so the core agent remains usable.
 
-The CLI prints the note titles used as grounded sources for each answer.
+The CLI prints the note titles used as grounded sources for each AI answer.
 
 ## Development checks
 
