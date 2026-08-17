@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from pathlib import Path
 
 from knowledgeforge.domain.note import Note, NoteService
 
@@ -40,10 +39,10 @@ class SemanticRetriever:
 
         matches: list[SemanticMatch] = []
         for note in self._note_service.list_notes():
-            key = str(Path(note.path))
+            content = self._note_service.read_content(note.title)
+            key = f"{note.path}:{note.updated_at.isoformat()}"
             vector = self._cache.get(key)
             if vector is None:
-                content = self._note_service.read_content(note.title)
                 vector = tuple(embed(f"{note.title}\n{content}"))
                 if vector:
                     self._cache[key] = vector
