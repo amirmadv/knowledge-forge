@@ -89,6 +89,18 @@ def chat() -> None:
         typer.echo()
 
 
+@app.command("index")
+def index() -> None:
+    """Build or refresh the local semantic embedding index."""
+    try:
+        count = _agent().rebuild_semantic_index()
+    except Exception as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Semantic index ready: {count} notes indexed.")
+
+
 @app.command("copilot-summary")
 def copilot_summary(title: str) -> None:
     """Summarize a note with the AI Copilot."""
