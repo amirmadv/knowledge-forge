@@ -1,58 +1,87 @@
-# Task Report — KF-011 Agent Evaluation and Observability
+# Task Report — KF-012 Agent Authorization Boundaries
 
 ## Status
 
-Advanced the bounded KnowledgeForge agent with a deterministic, offline evaluation harness while preserving the provider-neutral runtime boundary.
+Advanced the bounded KnowledgeForge agent with explicit read-only versus write-capable tool authorization while preserving the provider-neutral runtime boundary.
 
 ## Delivered
 
-### Compatibility fix
+### Tool authorization model
 
-- Extended the application-level `create_note()` command with an optional `content` argument.
-- The command still creates notes through the configured template and metadata pipeline; when explicit content is supplied, it replaces the generated body through the existing note-service update path.
-- This resolves the application integration regression reported after pulling the agent CLI milestone.
+- Added `ToolAccess` with `READ_ONLY` and `WRITE` policies.
+- Extended `ToolSpec` with an explicit access requirement.
+- Added `ToolAuthorizationError` for deterministic authorization failures.
+- Updated `KnowledgeToolRegistry.provider_tools()` to expose only tools allowed by the active policy.
+- Updated `KnowledgeToolRegistry.execute()` to enforce the same policy at execution time.
 
-### Deterministic agent evaluation
+### Runtime enforcement
 
-- Added `application.agent_evaluation` with a provider-independent evaluation model.
-- Added `ScriptedAgentPlanner` so planner decisions can be replayed without network access or a live model.
-- Added evaluation assertions for:
-  - successful task completion;
-  - expected answer text;
-  - required tool usage;
-  - per-case tool-call budgets;
-  - tool-call success/failure counts;
-  - repeated tool-call signatures.
-- Added aggregate metrics for completion rate, average tool calls, tool success rate, and repeated-tool cases.
-- Added stable JSON serialization for machine-readable evaluation reports.
-- Added JSON dataset loading with validation.
+- Extended `AgentRuntimeConfig` with `tool_access`.
+- The runtime defaults to `READ_ONLY`.
+- The runtime passes the policy into provider-tool exposure and tool execution.
+- Unauthorized write requests are returned to the planner as structured failed tool observations, preserving the existing tool-error recovery behavior.
 
-### Tests
+### First controlled write workflow
 
-- Added `tests/test_agent_evaluation.py` covering runtime replay, evaluation failures, repeated calls, dataset loading, invalid datasets, and report shape.
+- Added `CreateNoteTool` as the first write-capable agent tool.
+- The write tool is only registered when the application explicitly builds a write-capable registry.
+- The tool creates a note through the existing `NoteService`, then applies the requested Markdown content through the existing update path.
+- The tool returns structured note metadata and content.
+
+### Application boundary
+
+- `KnowledgeAgent.tools` remains read-only by default.
+- Added `KnowledgeAgent.tools_for_access()` for explicit capability selection.
+- Added `KnowledgeAgent.runtime(access=...)` for explicit runtime policy selection.
+- Added `KnowledgeAgent.run_agent(..., access=...)`, defaulting to read-only.
+
+### Documentation
+
+- Added `docs/adr/ADR-0012-agent-authorization-boundaries.md`.
+
+## Tests
+
+Added deterministic coverage for:
+
+- write tools being hidden from read-only provider declarations;
+- direct write execution being rejected under read-only policy;
+- authorized `create_note` execution;
+- runtime read-only default behavior;
+- write-tool metadata/access declarations.
 
 ## Current Architecture
 
 ```text
-AgentEvaluationCase
-        |
-        v
-ScriptedAgentPlanner ----> AgentRuntime ----> KnowledgeToolRegistry
-        |                         |
-        |                         +---- bounded execution guardrails
-        |
-        +---- deterministic model decisions
-
-                |
-                v
-        AgentEvaluationReport
-          |      |      |
-          |      |      +---- repeated-tool cases
-          |      +----------- tool success rate
-          +------------------ completion / efficiency metrics
+                         +----------------------+
+                         | KnowledgeAgent       |
+                         +----------+-----------+
+                                    |
+                    explicit ToolAccess policy
+                                    |
+                    +---------------+---------------+
+                    |                               |
+               READ_ONLY                         WRITE
+                    |                               |
+                    v                               v
+          core read tools                 core read tools
+          only exposed                   + create_note
+                    |                               |
+                    +---------------+---------------+
+                                    v
+                         KnowledgeToolRegistry
+                         /                  \
+                provider_tools()          execute()
+                    |                       |
+             exposure filter          auth enforcement
+                    \                       /
+                     +---------+-----------+
+                               v
+                         AgentRuntime
+                               |
+                    bounded execution guardrails
+                               |
+                         AgentEvaluation
 ```
-
-The evaluator deliberately reuses the real `AgentRuntime` instead of duplicating execution logic. This keeps evaluation aligned with production guardrails.
 
 ## Guardrails
 
@@ -62,16 +91,17 @@ The runtime continues to enforce:
 - 16 total tool calls per run;
 - consecutive identical tool-call detection;
 - unique tool-call IDs within a model response;
-- isolated tool failures returned as structured observations.
+- isolated tool failures returned as structured observations;
+- explicit tool access policy with read-only default.
 
 ## Validation
 
-The latest user-reported checkout had 174 passing tests and one application integration failure caused by `create_note(content=...)`. That compatibility issue is now addressed in the application command layer.
+The previous milestone reached 181 passing tests after fixing the `create_note(content=...)` application integration regression.
 
-The same checkout also reported one Ruff import-order finding in `src/knowledgeforge/ai_cli.py`; this remains a small cleanup item to verify/fix in the user's working tree.
+The previous checkout still reported two Ruff cleanup findings: import ordering in `src/knowledgeforge/ai_cli.py` and a simplifiable conditional in `src/knowledgeforge/application/agent_evaluation.py`. The latter is now corrected in this milestone; the `ai_cli.py` import ordering remains a small cleanup item for the next verification pass.
 
 ## Next Step
 
-Next milestone: **authorization boundaries and controlled tool capabilities**.
+Next milestone: **controlled write workflows beyond note creation and policy-aware agent evaluation**.
 
-Before exposing any mutating capability to the agent, introduce explicit read-only versus write-capable tool policies, make the runtime enforce the policy, and add evaluation cases proving that read-only runs cannot invoke mutating tools. After that, add the first controlled write workflow behind an explicit application-level authorization boundary.
+The next implementation should add authorization-aware evaluation cases and then introduce the next mutation only after its input validation, policy behavior, and deterministic evaluation are covered. Candidate mutations should remain behind explicit `ToolAccess.WRITE` until a stronger permission model is designed.
