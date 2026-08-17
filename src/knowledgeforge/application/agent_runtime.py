@@ -6,7 +6,11 @@ import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from knowledgeforge.application.tools import KnowledgeToolRegistry, ToolResult
+from knowledgeforge.application.tools import (
+    KnowledgeToolRegistry,
+    ToolAccess,
+    ToolResult,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,11 +128,12 @@ class AgentRuntimeError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class AgentRuntimeConfig:
-    """Safety limits for one bounded agent execution."""
+    """Safety and authorization limits for one bounded agent execution."""
 
     max_iterations: int = 8
     max_tool_calls: int = 16
     max_consecutive_duplicate_calls: int = 2
+    tool_access: ToolAccess = ToolAccess.READ_ONLY
 
     def __post_init__(self) -> None:
         if self.max_iterations < 1:
@@ -155,6 +160,11 @@ class AgentRuntime:
         """Return the registry used by this runtime."""
         return self._tool_registry
 
+    @property
+    def config(self) -> AgentRuntimeConfig:
+        """Return the immutable runtime configuration."""
+        return self._config
+
     def run(self, prompt: str, planner: AgentPlanner) -> AgentRunResult:
         """Run until the planner returns final text or a guardrail is reached."""
         normalized_prompt = prompt.strip()
@@ -172,7 +182,7 @@ class AgentRuntime:
         for _ in range(self._config.max_iterations):
             response = planner.respond(
                 tuple(messages),
-                self._tool_registry.provider_tools(),
+                self._tool_registry.provider_tools(self._config.tool_access),
             )
             self._validate_response(response)
 
@@ -222,7 +232,11 @@ class AgentRuntime:
                     )
 
                 try:
-                    result = self._tool_registry.execute(call.name, call.arguments)
+                    result = self._tool_registry.execute(
+                        call.name,
+                        call.arguments,
+                        access=self._config.tool_access,
+                    )
                 except Exception as exc:
                     observation = ToolObservation.from_error(call, exc)
                 else:
