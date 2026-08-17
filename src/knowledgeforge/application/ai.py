@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from knowledgeforge.application.semantic import SemanticRetriever
 from knowledgeforge.domain.graph import GraphService, NoteGraph
 from knowledgeforge.domain.note import Note, NoteService
 from knowledgeforge.infrastructure.ai.client import (
@@ -26,10 +27,10 @@ class AIAnswer:
 class KnowledgeAgent:
     """Graph-aware AI agent for the local KnowledgeForge vault.
 
-    Retrieval is intentionally local-first: exact note matches are preferred,
-    multi-word questions fall back to token search, and graph neighbors are
-    added to the context before the provider is called. This gives the agent
-    a lightweight RAG layer without requiring a vector database.
+    Retrieval is local-first: exact and keyword matches are combined with
+    optional semantic embeddings, then graph neighbors are added before the
+    provider is called. If embeddings are unavailable, lexical retrieval still
+    keeps the agent fully usable.
     """
 
     MAX_CONTEXT_NOTES = 8
@@ -37,6 +38,8 @@ class KnowledgeAgent:
     MAX_QUERY_TERMS = 8
     MIN_QUERY_TERM_LENGTH = 3
     MAX_HISTORY_TURNS = 8
+    SEMANTIC_LIMIT = 5
+    SEMANTIC_MIN_SCORE = 0.20
 
     def __init__(
         self,
@@ -60,9 +63,14 @@ class KnowledgeAgent:
             api_key=settings.ai_api_key,
             model=settings.ai_model,
             timeout=settings.ai_timeout,
+            embedding_model=settings.ai_embedding_model,
         )
         self._note_service = note_service or NoteService(resolved_vault_path)
         self._graph_service = graph_service or GraphService(resolved_vault_path)
+        self._semantic_retriever = SemanticRetriever(
+            note_service=self._note_service,
+            client=self._client,
+        )
 
     def ask(
         self,
@@ -107,7 +115,7 @@ class KnowledgeAgent:
         return self._graph_service.graph(title, depth=depth)
 
     def _retrieve_context_notes(self, question: str) -> list[Note]:
-        """Retrieve direct matches and expand them through the note graph."""
+        """Retrieve ranked matches and expand them through the note graph."""
         seeds = self._search_question(question)
         if not seeds:
             return []
@@ -138,22 +146,33 @@ class KnowledgeAgent:
         return list(selected.values())[: self.MAX_CONTEXT_NOTES]
 
     def _search_question(self, question: str) -> list[Note]:
-        """Search the question as a whole, then fall back to useful terms."""
+        """Use exact, semantic, and lexical retrieval in that order."""
         exact_matches = self._note_service.search(question)
         if exact_matches:
             return exact_matches[: self.MAX_CONTEXT_NOTES]
 
-        terms = self._query_terms(question)
         matches: dict[str, Note] = {}
 
-        for term in terms:
+        try:
+            semantic_matches = self._semantic_retriever.search(
+                question,
+                limit=self.SEMANTIC_LIMIT,
+            )
+        except AIClientError:
+            semantic_matches = []
+
+        for match in semantic_matches:
+            if match.score >= self.SEMANTIC_MIN_SCORE:
+                matches.setdefault(match.note.path.stem, match.note)
+
+        for term in self._query_terms(question):
             for note in self._note_service.search(term):
                 matches.setdefault(note.path.stem, note)
 
                 if len(matches) >= self.MAX_CONTEXT_NOTES:
                     return list(matches.values())
 
-        return list(matches.values())
+        return list(matches.values())[: self.MAX_CONTEXT_NOTES]
 
     @classmethod
     def _query_terms(cls, question: str) -> list[str]:
