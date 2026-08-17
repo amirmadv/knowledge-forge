@@ -124,6 +124,27 @@ def test_agent_falls_back_to_query_terms(tmp_path: Path) -> None:
     assert "weighted linear combination" in client.prompt
 
 
+def test_agent_preserves_conversation_history(tmp_path: Path) -> None:
+    """Follow-up questions should include bounded prior conversation turns."""
+    vault_path = tmp_path / "vault"
+    create_note(title="Linear Regression", vault_path=vault_path)
+    client = FakeAIClient()
+    agent = KnowledgeAgent(
+        settings=_settings(vault_path),
+        client=client,
+    )
+
+    agent.ask("What is linear regression?")
+    agent.ask(
+        "What is its loss function?",
+        history=(("What is linear regression?", "It predicts a target."),),
+    )
+
+    assert "User: What is linear regression?" in client.prompt
+    assert "Assistant: It predicts a target." in client.prompt
+    assert "What is its loss function?" in client.prompt
+
+
 def test_agent_inspects_note_graph(tmp_path: Path) -> None:
     """Agent graph inspection should delegate to the domain graph service."""
     vault_path = tmp_path / "vault"
