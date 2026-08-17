@@ -6,7 +6,6 @@ import pytest
 
 from knowledgeforge.application.agent_runtime import (
     AgentModelResponse,
-    AgentPlanner,
     AgentRuntime,
     AgentRuntimeConfig,
     AgentRuntimeError,
