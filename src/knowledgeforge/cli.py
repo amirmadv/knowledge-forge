@@ -10,6 +10,10 @@ from knowledgeforge.application.commands import (
     create_note,
     create_template,
     delete_note,
+    get_graph_statistics,
+    get_note_ancestors,
+    get_note_descendants,
+    get_note_graph,
     initialize_knowledgeforge,
     list_notes,
     list_templates,
@@ -240,6 +244,7 @@ def edit_note_command(
     typer.echo(result.message)
     typer.echo(f"Path: {result.note.path}")
 
+
 @note_app.command("delete")
 def delete_note_command(title: str) -> None:
     """Delete an existing Markdown note."""
@@ -254,6 +259,118 @@ def delete_note_command(title: str) -> None:
 
     typer.echo(result.message)
     typer.echo(f"Path: {result.note.path}")
+
+
+@note_app.command("graph")
+def note_graph_command(
+    title: str,
+    depth: Annotated[
+        int,
+        typer.Option(
+            "--depth",
+            "-d",
+            help="Maximum graph traversal depth.",
+        ),
+    ] = 1,
+) -> None:
+    """Show the graph around a note."""
+    try:
+        graph = get_note_graph(
+            title=title,
+            depth=depth,
+        )
+    except (
+        NoteNotFoundError,
+        ValueError,
+    ) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Graph for: {title}")
+    typer.echo(f"Depth: {depth}")
+
+    typer.echo("\nNodes:")
+
+    for node in graph.nodes:
+        typer.echo(f"  - {node.slug}")
+
+    typer.echo("\nEdges:")
+
+    if not graph.edges:
+        typer.echo("  None")
+        return
+
+    for edge in graph.edges:
+        typer.echo(
+            f"  - {edge.source} "
+            f"--[{edge.relation_type.value}]--> "
+            f"{edge.target}"
+        )
+
+
+@note_app.command("ancestors")
+def note_ancestors_command(title: str) -> None:
+    """Show all recursive ancestors of a note."""
+    try:
+        ancestors = get_note_ancestors(title)
+    except (
+        NoteNotFoundError,
+        ValueError,
+    ) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Ancestors of: {title}")
+
+    if not ancestors:
+        typer.echo("\nNone")
+        return
+
+    for ancestor in ancestors:
+        typer.echo(f"  - {ancestor}")
+
+
+@note_app.command("descendants")
+def note_descendants_command(title: str) -> None:
+    """Show all recursive descendants of a note."""
+    try:
+        descendants = get_note_descendants(title)
+    except (
+        NoteNotFoundError,
+        ValueError,
+    ) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Descendants of: {title}")
+
+    if not descendants:
+        typer.echo("\nNone")
+        return
+
+    for descendant in descendants:
+        typer.echo(f"  - {descendant}")
+
+
+@note_app.command("stats")
+def note_stats_command() -> None:
+    """Show aggregate graph statistics."""
+    try:
+        statistics = get_graph_statistics()
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo("KnowledgeForge Graph Statistics")
+    typer.echo(f"Nodes: {statistics.total_nodes}")
+    typer.echo(f"Edges: {statistics.total_edges}")
+    typer.echo(f"Orphan nodes: {statistics.orphan_nodes}")
+    typer.echo(f"Root nodes: {statistics.root_nodes}")
+    typer.echo(f"Leaf nodes: {statistics.leaf_nodes}")
+    typer.echo(f"Average degree: {statistics.average_degree:.2f}")
+    typer.echo(f"Max degree: {statistics.max_degree}")
+    typer.echo(f"Density: {statistics.density:.4f}")
+
 
 @template_app.command("create")
 def create_template_command(

@@ -365,3 +365,153 @@ def test_graph_rejects_negative_depth(
             "Machine Learning",
             depth=-1,
         )
+
+def test_ancestors_returns_all_recursive_ancestors(
+    tmp_path: Path,
+) -> None:
+    """Ancestors should recursively follow incoming relationships."""
+    note_service, relationship_service, graph_service = (
+        create_graph_services(tmp_path)
+    )
+
+    note_service.create("Machine Learning")
+    note_service.create("Linear Regression")
+    note_service.create("Gradient Descent")
+    note_service.create("Optimization")
+    note_service.create("Python")
+
+    relationship_service.add(
+        "Machine Learning",
+        "Linear Regression",
+    )
+    relationship_service.add(
+        "Linear Regression",
+        "Gradient Descent",
+    )
+    relationship_service.add(
+        "Gradient Descent",
+        "Optimization",
+    )
+    relationship_service.add(
+        "Python",
+        "Machine Learning",
+    )
+
+    ancestors = graph_service.ancestors(
+        "Optimization",
+    )
+
+    assert ancestors == [
+        "gradient-descent",
+        "linear-regression",
+        "machine-learning",
+        "python",
+    ]
+
+
+def test_descendants_returns_all_recursive_descendants(
+    tmp_path: Path,
+) -> None:
+    """Descendants should recursively follow outgoing relationships."""
+    note_service, relationship_service, graph_service = (
+        create_graph_services(tmp_path)
+    )
+
+    note_service.create("Machine Learning")
+    note_service.create("Linear Regression")
+    note_service.create("Gradient Descent")
+    note_service.create("Optimization")
+    note_service.create("Python")
+
+    relationship_service.add(
+        "Machine Learning",
+        "Linear Regression",
+    )
+    relationship_service.add(
+        "Linear Regression",
+        "Gradient Descent",
+    )
+    relationship_service.add(
+        "Gradient Descent",
+        "Optimization",
+    )
+
+    descendants = graph_service.descendants(
+        "Machine Learning",
+    )
+
+    assert descendants == [
+        "gradient-descent",
+        "linear-regression",
+        "optimization",
+    ]
+
+
+def test_ancestors_do_not_include_starting_note_in_cycle(
+    tmp_path: Path,
+) -> None:
+    """Ancestors should not include the starting note in a cycle."""
+    note_service, relationship_service, graph_service = (
+        create_graph_services(tmp_path)
+    )
+
+    note_service.create("Machine Learning")
+    note_service.create("Linear Regression")
+    note_service.create("Gradient Descent")
+
+    relationship_service.add(
+        "Machine Learning",
+        "Linear Regression",
+    )
+    relationship_service.add(
+        "Linear Regression",
+        "Gradient Descent",
+    )
+    relationship_service.add(
+        "Gradient Descent",
+        "Machine Learning",
+    )
+
+    ancestors = graph_service.ancestors(
+        "Machine Learning",
+    )
+
+    assert ancestors == [
+        "gradient-descent",
+        "linear-regression",
+    ]
+
+
+def test_descendants_do_not_include_starting_note_in_cycle(
+    tmp_path: Path,
+) -> None:
+    """Descendants should not include the starting note in a cycle."""
+    note_service, relationship_service, graph_service = (
+        create_graph_services(tmp_path)
+    )
+
+    note_service.create("Machine Learning")
+    note_service.create("Linear Regression")
+    note_service.create("Gradient Descent")
+
+    relationship_service.add(
+        "Machine Learning",
+        "Linear Regression",
+    )
+    relationship_service.add(
+        "Linear Regression",
+        "Gradient Descent",
+    )
+    relationship_service.add(
+        "Gradient Descent",
+        "Machine Learning",
+    )
+
+    descendants = graph_service.descendants(
+        "Machine Learning",
+    )
+
+    assert descendants == [
+        "gradient-descent",
+        "linear-regression",
+    ]

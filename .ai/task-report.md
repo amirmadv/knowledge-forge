@@ -1,41 +1,77 @@
-# Task Report — KF-006 Retrieval Explainability & Evaluation
+# Task Report — KF-011 Agent Evaluation and Observability
 
 ## Status
 
-Implemented retrieval explainability and the first offline evaluation slice on `agent/persistent-semantic-index`.
+Advanced the bounded KnowledgeForge agent with a deterministic, offline evaluation harness while preserving the provider-neutral runtime boundary.
 
 ## Delivered
 
-- Preserved the existing hybrid retrieval API.
-- Added immutable `RetrievalEvidence` at the application boundary.
-- Added `HybridRetriever.search_with_evidence()`.
-- Exposed semantic, lexical, and metadata scores plus weighted contributions.
-- Added deterministic human-readable retrieval reasons and deterministic tie-breaking.
-- Preserved bounded context construction and stable `[S1]`, `[S2]`, ... source markers.
-- Added offline retrieval metrics in `application/evaluation.py`:
-  - `precision_at_k`
-  - `recall_at_k`
-  - `reciprocal_rank`
-  - `mean_reciprocal_rank`
-  - `evaluate_retrieval`
-- Added `RetrievalEvaluationCase` and `RetrievalEvaluationResult` DTOs.
-- Added unit tests covering the metrics and aggregate evaluation behavior.
+### Compatibility fix
 
-## Architecture
+- Extended the application-level `create_note()` command with an optional `content` argument.
+- The command still creates notes through the configured template and metadata pipeline; when explicit content is supplied, it replaces the generated body through the existing note-service update path.
+- This resolves the application integration regression reported after pulling the agent CLI milestone.
 
-Evaluation is intentionally provider-independent. It accepts ranked note identifiers and a small gold set, so retrieval quality can be measured without calling an LLM.
+### Deterministic agent evaluation
+
+- Added `application.agent_evaluation` with a provider-independent evaluation model.
+- Added `ScriptedAgentPlanner` so planner decisions can be replayed without network access or a live model.
+- Added evaluation assertions for:
+  - successful task completion;
+  - expected answer text;
+  - required tool usage;
+  - per-case tool-call budgets;
+  - tool-call success/failure counts;
+  - repeated tool-call signatures.
+- Added aggregate metrics for completion rate, average tool calls, tool success rate, and repeated-tool cases.
+- Added stable JSON serialization for machine-readable evaluation reports.
+- Added JSON dataset loading with validation.
+
+### Tests
+
+- Added `tests/test_agent_evaluation.py` covering runtime replay, evaluation failures, repeated calls, dataset loading, invalid datasets, and report shape.
+
+## Current Architecture
+
+```text
+AgentEvaluationCase
+        |
+        v
+ScriptedAgentPlanner ----> AgentRuntime ----> KnowledgeToolRegistry
+        |                         |
+        |                         +---- bounded execution guardrails
+        |
+        +---- deterministic model decisions
+
+                |
+                v
+        AgentEvaluationReport
+          |      |      |
+          |      |      +---- repeated-tool cases
+          |      +----------- tool success rate
+          +------------------ completion / efficiency metrics
+```
+
+The evaluator deliberately reuses the real `AgentRuntime` instead of duplicating execution logic. This keeps evaluation aligned with production guardrails.
+
+## Guardrails
+
+The runtime continues to enforce:
+
+- 8 model iterations per run;
+- 16 total tool calls per run;
+- consecutive identical tool-call detection;
+- unique tool-call IDs within a model response;
+- isolated tool failures returned as structured observations.
 
 ## Validation
 
-The latest locally reported baseline before these changes was 121 passing tests with clean Ruff output. The new files have not been executed in the user's local checkout yet.
+The latest user-reported checkout had 174 passing tests and one application integration failure caused by `create_note(content=...)`. That compatibility issue is now addressed in the application command layer.
 
-Run locally after pulling the branch:
-
-```powershell
-python -m uv run ruff check .
-python -m uv run pytest -vv
-```
+The same checkout also reported one Ruff import-order finding in `src/knowledgeforge/ai_cli.py`; this remains a small cleanup item to verify/fix in the user's working tree.
 
 ## Next Step
 
-Expose `RetrievalEvidence` through an application/CLI explain command, then add a small real KnowledgeForge evaluation dataset and regression thresholds for Precision@K, Recall@K, and MRR.
+Next milestone: **authorization boundaries and controlled tool capabilities**.
+
+Before exposing any mutating capability to the agent, introduce explicit read-only versus write-capable tool policies, make the runtime enforce the policy, and add evaluation cases proving that read-only runs cannot invoke mutating tools. After that, add the first controlled write workflow behind an explicit application-level authorization boundary.

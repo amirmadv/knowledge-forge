@@ -29,3 +29,17 @@ class NoteGraph:
 
     nodes: tuple[GraphNode, ...]
     edges: tuple[GraphEdge, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GraphStatistics:
+    """Aggregate statistics for the complete KnowledgeForge note graph."""
+
+    total_nodes: int
+    total_edges: int
+    orphan_nodes: int
+    root_nodes: int
+    leaf_nodes: int
+    average_degree: float
+    max_degree: int
+    density: float

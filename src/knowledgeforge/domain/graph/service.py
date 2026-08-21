@@ -7,6 +7,7 @@ from pathlib import Path
 from knowledgeforge.domain.graph.model import (
     GraphEdge,
     GraphNode,
+    GraphStatistics,
     NoteGraph,
 )
 from knowledgeforge.domain.relationship.model import NoteRelation
@@ -83,9 +84,6 @@ class GraphService:
         title: str,
     ) -> list[NoteRelation]:
         """Return relationships pointing to the requested note.
-
-        Backlinks are directed relationships whose target is the
-        requested note.
 
         Args:
             title: Note title.
@@ -204,6 +202,154 @@ class GraphService:
                     ),
                 )
             ),
+        )
+
+    def ancestors(self, title: str) -> list[str]:
+        """Return all recursive ancestors of a note.
+
+        Args:
+            title: Note title.
+
+        Returns:
+            Sorted ancestor note slugs.
+        """
+        note = self._relationship_service.get_note(title)
+        start_slug = note.slug
+
+        relations = self._relationship_service.list_all()
+
+        ancestors: set[str] = set()
+        frontier: set[str] = {start_slug}
+
+        while frontier:
+            next_frontier: set[str] = set()
+
+            for relation in relations:
+                if (
+                    relation.target in frontier
+                    and relation.source not in ancestors
+                    and relation.source != start_slug
+                ):
+                    ancestors.add(relation.source)
+                    next_frontier.add(relation.source)
+
+            frontier = next_frontier
+
+        return sorted(ancestors)
+
+    def descendants(self, title: str) -> list[str]:
+        """Return all recursive descendants of a note.
+
+        Args:
+            title: Note title.
+
+        Returns:
+            Sorted descendant note slugs.
+        """
+        note = self._relationship_service.get_note(title)
+        start_slug = note.slug
+
+        relations = self._relationship_service.list_all()
+
+        descendants: set[str] = set()
+        frontier: set[str] = {start_slug}
+
+        while frontier:
+            next_frontier: set[str] = set()
+
+            for relation in relations:
+                if (
+                    relation.source in frontier
+                    and relation.target not in descendants
+                    and relation.target != start_slug
+                ):
+                    descendants.add(relation.target)
+                    next_frontier.add(relation.target)
+
+            frontier = next_frontier
+
+        return sorted(descendants)
+
+    def statistics(self) -> GraphStatistics:
+        """Return aggregate statistics for the complete note graph."""
+        notes = self._relationship_service.list_notes()
+        relations = self._relationship_service.list_all()
+
+        total_nodes = len(notes)
+        total_edges = len(relations)
+
+        if total_nodes == 0:
+            return GraphStatistics(
+                total_nodes=0,
+                total_edges=total_edges,
+                orphan_nodes=0,
+                root_nodes=0,
+                leaf_nodes=0,
+                average_degree=0.0,
+                max_degree=0,
+                density=0.0,
+            )
+
+        node_slugs = {note.slug for note in notes}
+
+        incoming_degree: dict[str, int] = {
+            slug: 0 for slug in node_slugs
+        }
+        outgoing_degree: dict[str, int] = {
+            slug: 0 for slug in node_slugs
+        }
+
+        for relation in relations:
+            if relation.source in outgoing_degree:
+                outgoing_degree[relation.source] += 1
+
+            if relation.target in incoming_degree:
+                incoming_degree[relation.target] += 1
+
+        degree = {
+            slug: incoming_degree[slug] + outgoing_degree[slug]
+            for slug in node_slugs
+        }
+
+        orphan_nodes = sum(
+            1
+            for slug in node_slugs
+            if degree[slug] == 0
+        )
+
+        root_nodes = sum(
+            1
+            for slug in node_slugs
+            if incoming_degree[slug] == 0
+            and outgoing_degree[slug] > 0
+        )
+
+        leaf_nodes = sum(
+            1
+            for slug in node_slugs
+            if outgoing_degree[slug] == 0
+        )
+
+        total_degree = sum(degree.values())
+        average_degree = total_degree / total_nodes
+
+        max_degree = max(degree.values(), default=0)
+
+        density = (
+            0.0
+            if total_nodes <= 1
+            else total_edges / (total_nodes * (total_nodes - 1))
+        )
+
+        return GraphStatistics(
+            total_nodes=total_nodes,
+            total_edges=total_edges,
+            orphan_nodes=orphan_nodes,
+            root_nodes=root_nodes,
+            leaf_nodes=leaf_nodes,
+            average_degree=average_degree,
+            max_degree=max_degree,
+            density=density,
         )
 
     @staticmethod

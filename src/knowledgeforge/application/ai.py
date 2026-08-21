@@ -6,14 +6,17 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from knowledgeforge.application.agent_runtime import AgentRunResult, AgentRuntime
 from knowledgeforge.application.retrieval import (
     ContextBuilder,
     HybridRetriever,
+    RetrievalEvidence,
     SourceRef,
 )
 from knowledgeforge.application.semantic import SemanticRetriever
 from knowledgeforge.domain.graph import GraphService, NoteGraph
 from knowledgeforge.domain.note import Note, NoteService
+from knowledgeforge.infrastructure.ai.agent_planner import OpenAICompatibleAgentPlanner
 from knowledgeforge.infrastructure.ai.client import (
     AIClientError,
     OpenAICompatibleClient,
@@ -37,6 +40,12 @@ class KnowledgeAgent:
     MAX_QUERY_TERMS = 8
     MIN_QUERY_TERM_LENGTH = 3
     MAX_HISTORY_TURNS = 8
+    AGENT_SYSTEM_PROMPT = (
+        "You are the KnowledgeForge personal knowledge agent. "
+        "Use the user's local knowledge tools when you need facts from the vault. "
+        "Do not invent facts that are not supported by tool results. "
+        "When you have enough evidence, answer the user directly and concisely."
+    )
 
     def __init__(
         self,
@@ -85,9 +94,38 @@ class KnowledgeAgent:
         return self._note_service
 
     @property
+    def graph_service(self) -> GraphService:
+        """Expose the configured graph service to cooperating use cases."""
+        return self._graph_service
+
+    @property
     def client(self) -> OpenAICompatibleClient:
         """Expose the configured AI client to cooperating use cases."""
         return self._client
+
+    @property
+    def tools(self):
+        """Expose the provider-neutral core tool registry."""
+        from knowledgeforge.application.tools import build_knowledge_tool_registry
+
+        return build_knowledge_tool_registry(self)
+
+    @property
+    def runtime(self) -> AgentRuntime:
+        """Expose a bounded provider-neutral runtime over the core tools."""
+        return AgentRuntime(self.tools)
+
+    @property
+    def planner(self) -> OpenAICompatibleAgentPlanner:
+        """Expose the concrete OpenAI-compatible provider adapter."""
+        return OpenAICompatibleAgentPlanner(
+            self._client,
+            system_prompt=self.AGENT_SYSTEM_PROMPT,
+        )
+
+    def run_agent(self, prompt: str) -> AgentRunResult:
+        """Run the bounded tool-using agent through the configured provider."""
+        return self.runtime.run(prompt, self.planner)
 
     def ask(
         self,
@@ -135,6 +173,14 @@ class KnowledgeAgent:
             ),
             sources=tuple(note.title for note in notes),
         )
+
+    def search_with_evidence(
+        self,
+        query: str,
+        limit: int = 8,
+    ) -> list[RetrievalEvidence]:
+        """Search the vault and expose explainable retrieval evidence."""
+        return self._retriever.search_with_evidence(query, limit=limit)
 
     def inspect_graph(self, title: str, depth: int = 1) -> NoteGraph:
         """Inspect the graph neighborhood of a note."""
